@@ -1,6 +1,6 @@
 using System;
 using System.IO;
-using System.Net;
+using System.Net.Http;
 using System.Text;
 using System.Threading.Tasks;
 using System.Xml.Linq;
@@ -23,13 +23,14 @@ namespace SamFirm
             public string imei { get; set; }
         }
 
-        private static string GetLatestVersion(string region, string model)
+        private static readonly HttpClient _httpClient = new HttpClient();
+
+        private static async Task<string> GetLatestVersion(string region, string model)
         {
-            using (WebClient client = new WebClient())
-            {
-                string XMLString = client.DownloadString("http://fota-cloud-dn.ospserver.net/firmware/" + region + "/" + model + "/version.xml");
-                return XDocument.Parse(XMLString).XPathSelectElement("./versioninfo/firmware/version/latest").Value;
-            }
+
+            string url = $"http://fota-cloud-dn.ospserver.net/firmware/{region}/{model}/version.xml";
+            string xmlString = await _httpClient.GetStringAsync(url);
+            return XDocument.Parse(xmlString).XPathSelectElement("./versioninfo/firmware/version/latest").Value;
         }
 
         static async Task Main(string[] args)
@@ -45,63 +46,40 @@ namespace SamFirm
                 imei = o.imei;
             });
 
-            if (model.Length == 0 || region.Length == 0 || imei.Length == 0)
-            {
-                return;
-            }
+            if (string.IsNullOrEmpty(model) || string.IsNullOrEmpty(region) || string.IsNullOrEmpty(imei)) return;
 
             Console.OutputEncoding = Encoding.UTF8;
+            Console.WriteLine($"\n  Model: {model}\n  Region: {region}");
 
-            Console.WriteLine($@"
-            Model: {model}
-            Region: {region}");
-
-            string[] versions = GetLatestVersion(region, model).Split('/');
+            string latestVersionStr = await GetLatestVersion(region, model);
+            string[] versions = latestVersionStr.Split('/');
             string versionPDA = versions[0];
             string versionCSC = versions[1];
             string versionMODEM = versions[2];
             string version = $"{versionPDA}/{versionCSC}/{(versionMODEM.Length > 0 ? versionMODEM : versionPDA)}/{versionPDA}";
 
-            Console.WriteLine($@"
-            Latest version:
-            PDA: {versionPDA}
-            CSC: {versionCSC}
-            MODEM: {(versionMODEM.Length > 0 ? versionMODEM : "N/A")}");
+            Console.WriteLine($"\n  Latest version:\n    PDA: {versionPDA}\n    CSC: {versionCSC}\n    MODEM: {(versionMODEM.Length > 0 ? versionMODEM : "N/A")}");
 
-            int responseStatus;
-            responseStatus = Utils.FUSClient.GenerateNonce();
+            Utils.FUSClient.GenerateNonce();
 
             string binaryInfoXMLString;
-            responseStatus = Utils.FUSClient.DownloadBinaryInform(
+            Utils.FUSClient.DownloadBinaryInform(
                 Utils.Msg.GetBinaryInformMsg(version, region, model, imei, Utils.FUSClient.NonceDecrypted), out binaryInfoXMLString);
 
             XDocument binaryInfo = XDocument.Parse(binaryInfoXMLString);
             long binaryByteSize = long.Parse(binaryInfo.XPathSelectElement("./FUSMsg/FUSBody/Put/BINARY_BYTE_SIZE/Data").Value);
-            string binaryDescription = binaryInfo.XPathSelectElement("./FUSMsg/FUSBody/Put/DESCRIPTION/Data").Value;
             string binaryFilename = binaryInfo.XPathSelectElement("./FUSMsg/FUSBody/Put/BINARY_NAME/Data").Value;
             string binaryLogicValue = binaryInfo.XPathSelectElement("./FUSMsg/FUSBody/Put/LOGIC_VALUE_FACTORY/Data").Value;
             string binaryModelPath = binaryInfo.XPathSelectElement("./FUSMsg/FUSBody/Put/MODEL_PATH/Data").Value;
-            string binaryOSVersion = binaryInfo.XPathSelectElement("./FUSMsg/FUSBody/Put/CURRENT_OS_VERSION/Data").Value;
             string binaryVersion = binaryInfo.XPathSelectElement("./FUSMsg/FUSBody/Results/LATEST_FW_VERSION/Data").Value;
 
-            Console.WriteLine($@"
-            OS: {binaryOSVersion}
-            Filename: {binaryFilename}
-            Size: {binaryByteSize} bytes
-            Logic Value: {binaryLogicValue}
-            Description:
-            {string.Join("\n    ", binaryDescription.TrimStart().Split('\n'))}");
-
-            string binaryInitXMLString;
-            responseStatus = Utils.FUSClient.DownloadBinaryInit(Utils.Msg.GetBinaryInitMsg(binaryFilename, Utils.FUSClient.NonceDecrypted), out binaryInitXMLString);
+            Utils.FUSClient.DownloadBinaryInit(Utils.Msg.GetBinaryInitMsg(binaryFilename, Utils.FUSClient.NonceDecrypted), out _);
 
             Utils.File.FileSize = binaryByteSize;
             Utils.File.SetDecryptKey(binaryVersion, binaryLogicValue);
 
             string savePath = Path.GetFullPath($"./{model}_{region}");
-
-            Console.WriteLine($@"
-            {savePath}");
+            Console.WriteLine($"\nSaving to: {savePath}");
 
 
             await Utils.FUSClient.DownloadBinary(binaryModelPath, binaryFilename, savePath);

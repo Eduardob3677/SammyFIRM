@@ -1,4 +1,5 @@
-﻿using System;
+﻿#pragma warning disable SYSLIB0014
+using System;
 using System.IO;
 using System.Linq;
 using System.Net;
