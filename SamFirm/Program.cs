@@ -2,6 +2,7 @@ using System;
 using System.IO;
 using System.Net;
 using System.Text;
+using System.Threading.Tasks;
 using System.Xml.Linq;
 using System.Xml.XPath;
 using CommandLine;
@@ -31,18 +32,18 @@ namespace SamFirm
             }
         }
 
-        static void Main(string[] args)
+        static async Task Main(string[] args)
         {
             string model = "";
             string region = "";
             string imei = "";
             Parser.Default.ParseArguments<Options>(args)
-                .WithParsed(o =>
-                {
-                    model = o.Model;
-                    region = o.Region;
-                    imei = o.imei;
-                });
+            .WithParsed(o =>
+            {
+                model = o.Model;
+                region = o.Region;
+                imei = o.imei;
+            });
 
             if (model.Length == 0 || region.Length == 0 || imei.Length == 0)
             {
@@ -52,8 +53,8 @@ namespace SamFirm
             Console.OutputEncoding = Encoding.UTF8;
 
             Console.WriteLine($@"
-  Model: {model}
-  Region: {region}");
+            Model: {model}
+            Region: {region}");
 
             string[] versions = GetLatestVersion(region, model).Split('/');
             string versionPDA = versions[0];
@@ -62,17 +63,17 @@ namespace SamFirm
             string version = $"{versionPDA}/{versionCSC}/{(versionMODEM.Length > 0 ? versionMODEM : versionPDA)}/{versionPDA}";
 
             Console.WriteLine($@"
-  Latest version:
-    PDA: {versionPDA}
-    CSC: {versionCSC}
-    MODEM: {(versionMODEM.Length > 0 ? versionMODEM : "N/A")}");
+            Latest version:
+            PDA: {versionPDA}
+            CSC: {versionCSC}
+            MODEM: {(versionMODEM.Length > 0 ? versionMODEM : "N/A")}");
 
             int responseStatus;
             responseStatus = Utils.FUSClient.GenerateNonce();
 
             string binaryInfoXMLString;
             responseStatus = Utils.FUSClient.DownloadBinaryInform(
-                Utils.Msg.GetBinaryInformMsg(version, region, model,imei, Utils.FUSClient.NonceDecrypted), out binaryInfoXMLString);
+                Utils.Msg.GetBinaryInformMsg(version, region, model, imei, Utils.FUSClient.NonceDecrypted), out binaryInfoXMLString);
 
             XDocument binaryInfo = XDocument.Parse(binaryInfoXMLString);
             long binaryByteSize = long.Parse(binaryInfo.XPathSelectElement("./FUSMsg/FUSBody/Put/BINARY_BYTE_SIZE/Data").Value);
@@ -84,12 +85,12 @@ namespace SamFirm
             string binaryVersion = binaryInfo.XPathSelectElement("./FUSMsg/FUSBody/Results/LATEST_FW_VERSION/Data").Value;
 
             Console.WriteLine($@"
-  OS: {binaryOSVersion}
-  Filename: {binaryFilename}
-  Size: {binaryByteSize} bytes
-  Logic Value: {binaryLogicValue}
-  Description:
-    {string.Join("\n    ", binaryDescription.TrimStart().Split('\n'))}");
+            OS: {binaryOSVersion}
+            Filename: {binaryFilename}
+            Size: {binaryByteSize} bytes
+            Logic Value: {binaryLogicValue}
+            Description:
+            {string.Join("\n    ", binaryDescription.TrimStart().Split('\n'))}");
 
             string binaryInitXMLString;
             responseStatus = Utils.FUSClient.DownloadBinaryInit(Utils.Msg.GetBinaryInitMsg(binaryFilename, Utils.FUSClient.NonceDecrypted), out binaryInitXMLString);
@@ -100,9 +101,10 @@ namespace SamFirm
             string savePath = Path.GetFullPath($"./{model}_{region}");
 
             Console.WriteLine($@"
-{savePath}");
+            {savePath}");
 
-            Utils.FUSClient.DownloadBinary(binaryModelPath, binaryFilename, savePath);
+
+            await Utils.FUSClient.DownloadBinary(binaryModelPath, binaryFilename, savePath);
         }
     }
 }

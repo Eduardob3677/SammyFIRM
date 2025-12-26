@@ -2,6 +2,8 @@
 using System.IO;
 using System.Linq;
 using System.Net;
+using System.Net.Http; // Required for HttpClient
+using System.Threading.Tasks; // Required for Task
 using System.Text;
 using System.Text.RegularExpressions;
 
@@ -15,7 +17,7 @@ namespace SamFirm.Utils
             request.Headers["Cache-Control"] = "no-cache";
             request.UserAgent = "Kies2.0_FUS";
             request.Headers.Add("Authorization",
-                $"FUS nonce=\"{FUSClient.Nonce}\", signature=\"{(FUSClient.NonceDecrypted.Length > 0 ? Auth.GetAuthorization(FUSClient.NonceDecrypted) : "")}\", nc=\"\", type=\"\", realm=\"\", newauth=\"1\"");
+                                $"FUS nonce=\"{FUSClient.Nonce}\", signature=\"{(FUSClient.NonceDecrypted.Length > 0 ? Auth.GetAuthorization(FUSClient.NonceDecrypted) : "")}\", nc=\"\", type=\"\", realm=\"\", newauth=\"1\"");
             request.CookieContainer = FUSClient.Cookies;
             return request;
         }
@@ -27,48 +29,35 @@ namespace SamFirm.Utils
         public static string Nonce { get; set; } = string.Empty;
         public static string NonceDecrypted { get; set; } = string.Empty;
 
-        public static int DownloadBinary(string path, string file, string saveTo)
+
+        private static readonly HttpClient _httpClient = new HttpClient();
+
+
+        public static async Task DownloadBinary(string path, string file, string saveTo)
         {
-            long num = 0L;
-            HttpWebRequest wr = FUSRequest.Create("http://cloud-neofussvr.samsungmobile.com/NF_DownloadBinaryForMass.do?file=" + path + file);
-            wr.Method = "GET";
-            wr.Timeout = 0x61a8;
-            wr.ReadWriteTimeout = 0x61a8;
-            using (HttpWebResponse response = (HttpWebResponse)wr.GetFUSResponse())
+            string url = "http://cloud-neofussvr.samsungmobile.com/NF_DownloadBinaryForMass.do?file=" + path + file;
+
+            var request = new HttpRequestMessage(HttpMethod.Get, url);
+            request.Headers.Add("User-Agent", "Kies2.0_FUS");
+            request.Headers.Add("Authorization", $"FUS nonce=\"{Nonce}\", signature=\"{Auth.GetAuthorization(NonceDecrypted)}\"");
+
+
+            using (var response = await _httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead))
             {
-                if (response == null)
+                response.EnsureSuccessStatusCode();
+                using (var stream = await response.Content.ReadAsStreamAsync())
                 {
-                    Console.WriteLine("Error DownloadBinary(): response is null.");
-                    return 0x385;
+
+                    File.HandleEncryptedFile(stream, saveTo);
                 }
-                if ((response.StatusCode != HttpStatusCode.OK) && (response.StatusCode != HttpStatusCode.PartialContent))
-                {
-                    Console.WriteLine("Error DownloadBinary(): " + ((int)response.StatusCode));
-                }
-                else
-                {
-                    long total = long.Parse(response.GetResponseHeader("content-length")) + num;
-                    byte[] buffer = new byte[0x2000];
-                    try
-                    {
-                        File.HandleEncryptedFile(response.GetResponseStream(), saveTo);
-                    }
-                    catch (Exception exception)
-                    {
-                        Console.WriteLine("Error DownloadBinary(): ");
-                        Console.WriteLine(exception.ToString());
-                        return -1;
-                    }
-                }
-                return 0;
             }
         }
 
         public static int DownloadBinaryInform(string xml, out string xmlresponse) =>
-            XMLFUSRequest("https://neofussvr.sslcs.cdngc.net/NF_DownloadBinaryInform.do", xml, out xmlresponse);
+        XMLFUSRequest("https://neofussvr.sslcs.cdngc.net/NF_DownloadBinaryInform.do", xml, out xmlresponse);
 
         public static int DownloadBinaryInit(string xml, out string xmlresponse) =>
-            XMLFUSRequest("https://neofussvr.sslcs.cdngc.net/NF_DownloadBinaryInitForMass.do", xml, out xmlresponse);
+        XMLFUSRequest("https://neofussvr.sslcs.cdngc.net/NF_DownloadBinaryInitForMass.do", xml, out xmlresponse);
 
         public static int GenerateNonce()
         {
