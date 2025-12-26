@@ -5,35 +5,47 @@ on:
     tags:
       - "v*"
 
+permissions:
+  contents: write
+
 jobs:
   release:
-    runs-on: ubuntu-20.04
+    runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v2
+      - name: Checkout code
+        uses: actions/checkout@v4
 
-      - name: Setup dotnet 5.0
-        uses: actions/setup-dotnet@v1
+      - name: Setup .NET 8.0
+        uses: actions/setup-dotnet@v4
         with:
-          dotnet-version: "5.0.x"
+          dotnet-version: "8.0.x"
 
-      - run: dotnet publish ./SamFirm/SamFirm.csproj -c Release -p:PublishProfile=./SamFirm/Properties/PublishProfiles/linux-x64.pubxml
-      - run: dotnet publish ./SamFirm/SamFirm.csproj -c Release -p:PublishProfile=./SamFirm/Properties/PublishProfiles/macos-x64.pubxml
-      - run: dotnet publish ./SamFirm/SamFirm.csproj -c Release -p:PublishProfile=./SamFirm/Properties/PublishProfiles/win-x64.pubxml
-      - run: dotnet publish ./SamFirm/SamFirm.csproj -c Release -p:PublishProfile=./SamFirm/Properties/PublishProfiles/win-x64-single.pubxml
+      # Publish Linux exec
+      - name: Publish Linux
+        run: dotnet publish ./SamFirm/SamFirm.csproj -c Release -r linux-x64 --self-contained true -p:PublishSingleFile=true -p:PublishTrimmed=false -o ./dist/linux
 
-      - run: mv ./SamFirm/dist/linux-x64/SamFirm ./linux-x64
-      - run: mv ./SamFirm/dist/macos-x64/SamFirm ./macos-x64
-      - run: mv ./SamFirm/dist/win-x64/SamFirm.exe ./win-x64.exe
-      - run: mv ./SamFirm/dist/win-x64-single/SamFirm.exe ./win-x64-single.exe
+      # Publish macOS (Intel)
+      - name: Publish macOS
+        run: dotnet publish ./SamFirm/SamFirm.csproj -c Release -r osx-x64 --self-contained true -p:PublishSingleFile=true -p:PublishTrimmed=false -o ./dist/macos
 
+      # Publish Windows (Single File .exe)
+      - name: Publish Windows
+        run: dotnet publish ./SamFirm/SamFirm.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:PublishTrimmed=false -o ./dist/windows
+
+  
+      - name: Prepare Artifacts
+        run: |
+          mv ./dist/linux/SamFirm ./SamFirm-linux-x64
+          mv ./dist/macos/SamFirm ./SamFirm-macos-x64
+          mv ./dist/windows/SamFirm.exe ./SamFirm-win-x64.exe
+
+      # Upload them to the release page
       - name: Upload release assets
-        uses: softprops/action-gh-release@v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        uses: softprops/action-gh-release@v2
+        if: startsWith(github.ref, 'refs/tags/')
         with:
           files: |
-            linux-x64
-            macos-x64
-            win-x64.exe
-            win-x64-single.exe
+            SamFirm-linux-x64
+            SamFirm-macos-x64
+            SamFirm-win-x64.exe
