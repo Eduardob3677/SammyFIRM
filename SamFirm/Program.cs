@@ -1,5 +1,6 @@
 using System;
 using System.IO;
+using System.Linq;
 using System.Net.Http;
 using System.Text;
 using System.Threading.Tasks;
@@ -24,6 +25,9 @@ namespace SamFirm
 
             [Option('t', "test", Required = false, HelpText = "Use test server (version.test.xml)")]
             public bool UseTestServer { get; set; }
+
+            [Option('d', "decrypt", Required = false, HelpText = "Decrypt MD5-encoded test firmware versions")]
+            public bool DecryptMD5 { get; set; }
         }
 
         private static readonly HttpClient _httpClient = new HttpClient();
@@ -33,7 +37,18 @@ namespace SamFirm
             string versionFile = useTestServer ? "version.test.xml" : "version.xml";
             string url = $"http://fota-cloud-dn.ospserver.net/firmware/{region}/{model}/{versionFile}";
             string xmlString = await _httpClient.GetStringAsync(url);
-            return XDocument.Parse(xmlString).XPathSelectElement("./versioninfo/firmware/version/latest").Value;
+            var latestElement = XDocument.Parse(xmlString).XPathSelectElement("./versioninfo/firmware/version/latest");
+            
+            if (latestElement == null || string.IsNullOrEmpty(latestElement.Value))
+            {
+                if (useTestServer)
+                {
+                    throw new Exception("Test server has only MD5-encoded versions. Use --decrypt flag to decrypt them first.");
+                }
+                throw new Exception("No version information available.");
+            }
+            
+            return latestElement.Value;
         }
 
         static async Task Main(string[] args)
@@ -42,6 +57,7 @@ namespace SamFirm
             string region = "";
             string imei = "";
             bool useTestServer = false;
+            bool decryptMD5 = false;
             Parser.Default.ParseArguments<Options>(args)
             .WithParsed(o =>
             {
@@ -49,49 +65,88 @@ namespace SamFirm
                 region = o.Region;
                 imei = o.imei;
                 useTestServer = o.UseTestServer;
+                decryptMD5 = o.DecryptMD5;
             });
 
             if (string.IsNullOrEmpty(model) || string.IsNullOrEmpty(region) || string.IsNullOrEmpty(imei)) return;
 
-            Console.OutputEncoding = Encoding.UTF8;
-            Console.WriteLine($"\n  Model: {model}\n  Region: {region}");
-            if (useTestServer)
+            try
             {
-                Console.WriteLine("  Mode: Test Server (version.test.xml)");
+                Console.OutputEncoding = Encoding.UTF8;
+                Console.WriteLine($"\n  Model: {model}\n  Region: {region}");
+                if (useTestServer)
+                {
+                    Console.WriteLine("  Mode: Test Server (version.test.xml)");
+                }
+
+                // If decrypt flag is set and using test server, decrypt MD5 values
+                if (decryptMD5 && useTestServer)
+                {
+                    Console.WriteLine("\n=== MD5 Decryption Mode ===");
+                    string versionFile = "version.test.xml";
+                    string url = $"http://fota-cloud-dn.ospserver.net/firmware/{region}/{model}/{versionFile}";
+                    string xmlString = await _httpClient.GetStringAsync(url);
+                    
+                    var decryptedVersions = Utils.MD5Decrypt.DecryptMD5Versions(xmlString, model, region);
+                    
+                    if (decryptedVersions.Count > 0)
+                    {
+                        Console.WriteLine($"\n=== Decrypted {decryptedVersions.Count} Test Firmware Versions ===");
+                        foreach (var kvp in decryptedVersions.OrderByDescending(x => x.Value))
+                        {
+                            Console.WriteLine($"  {kvp.Value}");
+                            Console.WriteLine($"    MD5: {kvp.Key}");
+                        }
+                    }
+                    
+                    Console.WriteLine("\nDecryption complete. Use without --decrypt flag to download a specific version.");
+                    return;
+                }
+
+                string latestVersionStr = await GetLatestVersion(region, model, useTestServer);
+                string[] versions = latestVersionStr.Split('/');
+                string versionPDA = versions[0];
+                string versionCSC = versions[1];
+                string versionMODEM = versions[2];
+                string version = $"{versionPDA}/{versionCSC}/{(versionMODEM.Length > 0 ? versionMODEM : versionPDA)}/{versionPDA}";
+
+                Console.WriteLine($"\n  Latest version:\n    PDA: {versionPDA}\n    CSC: {versionCSC}\n    MODEM: {(versionMODEM.Length > 0 ? versionMODEM : "N/A")}");
+
+                Utils.FUSClient.GenerateNonce();
+
+                string binaryInfoXMLString;
+                Utils.FUSClient.DownloadBinaryInform(
+                    Utils.Msg.GetBinaryInformMsg(version, region, model, imei, Utils.FUSClient.NonceDecrypted), out binaryInfoXMLString);
+
+                XDocument binaryInfo = XDocument.Parse(binaryInfoXMLString);
+                long binaryByteSize = long.Parse(binaryInfo.XPathSelectElement("./FUSMsg/FUSBody/Put/BINARY_BYTE_SIZE/Data").Value);
+                string binaryFilename = binaryInfo.XPathSelectElement("./FUSMsg/FUSBody/Put/BINARY_NAME/Data").Value;
+                string binaryLogicValue = binaryInfo.XPathSelectElement("./FUSMsg/FUSBody/Put/LOGIC_VALUE_FACTORY/Data").Value;
+                string binaryModelPath = binaryInfo.XPathSelectElement("./FUSMsg/FUSBody/Put/MODEL_PATH/Data").Value;
+                string binaryVersion = binaryInfo.XPathSelectElement("./FUSMsg/FUSBody/Results/LATEST_FW_VERSION/Data").Value;
+
+                Utils.FUSClient.DownloadBinaryInit(Utils.Msg.GetBinaryInitMsg(binaryFilename, Utils.FUSClient.NonceDecrypted), out _);
+
+                Utils.File.FileSize = binaryByteSize;
+                Utils.File.SetDecryptKey(binaryVersion, binaryLogicValue);
+
+                string savePath = Path.GetFullPath($"./{model}_{region}");
+                Console.WriteLine($"\nSaving to: {savePath}");
+
+
+                await Utils.FUSClient.DownloadBinary(binaryModelPath, binaryFilename, savePath);
             }
-
-            string latestVersionStr = await GetLatestVersion(region, model, useTestServer);
-            string[] versions = latestVersionStr.Split('/');
-            string versionPDA = versions[0];
-            string versionCSC = versions[1];
-            string versionMODEM = versions[2];
-            string version = $"{versionPDA}/{versionCSC}/{(versionMODEM.Length > 0 ? versionMODEM : versionPDA)}/{versionPDA}";
-
-            Console.WriteLine($"\n  Latest version:\n    PDA: {versionPDA}\n    CSC: {versionCSC}\n    MODEM: {(versionMODEM.Length > 0 ? versionMODEM : "N/A")}");
-
-            Utils.FUSClient.GenerateNonce();
-
-            string binaryInfoXMLString;
-            Utils.FUSClient.DownloadBinaryInform(
-                Utils.Msg.GetBinaryInformMsg(version, region, model, imei, Utils.FUSClient.NonceDecrypted), out binaryInfoXMLString);
-
-            XDocument binaryInfo = XDocument.Parse(binaryInfoXMLString);
-            long binaryByteSize = long.Parse(binaryInfo.XPathSelectElement("./FUSMsg/FUSBody/Put/BINARY_BYTE_SIZE/Data").Value);
-            string binaryFilename = binaryInfo.XPathSelectElement("./FUSMsg/FUSBody/Put/BINARY_NAME/Data").Value;
-            string binaryLogicValue = binaryInfo.XPathSelectElement("./FUSMsg/FUSBody/Put/LOGIC_VALUE_FACTORY/Data").Value;
-            string binaryModelPath = binaryInfo.XPathSelectElement("./FUSMsg/FUSBody/Put/MODEL_PATH/Data").Value;
-            string binaryVersion = binaryInfo.XPathSelectElement("./FUSMsg/FUSBody/Results/LATEST_FW_VERSION/Data").Value;
-
-            Utils.FUSClient.DownloadBinaryInit(Utils.Msg.GetBinaryInitMsg(binaryFilename, Utils.FUSClient.NonceDecrypted), out _);
-
-            Utils.File.FileSize = binaryByteSize;
-            Utils.File.SetDecryptKey(binaryVersion, binaryLogicValue);
-
-            string savePath = Path.GetFullPath($"./{model}_{region}");
-            Console.WriteLine($"\nSaving to: {savePath}");
-
-
-            await Utils.FUSClient.DownloadBinary(binaryModelPath, binaryFilename, savePath);
+            catch (Exception ex)
+            {
+                Console.WriteLine($"\nError: {ex.Message}");
+                if (useTestServer && !decryptMD5)
+                {
+                    Console.WriteLine("\nHint: Test server firmware versions are MD5-encoded.");
+                    Console.WriteLine("Use --decrypt flag to decrypt them first:");
+                    Console.WriteLine($"  ./SamFirm -m {model} -r {region} -i {imei} --test --decrypt");
+                }
+                Environment.Exit(1);
+            }
         }
     }
 }

@@ -11,6 +11,7 @@ A streaming downloader, decryptor and extractor of Samsung firmware.
 1. Region, Model and IMEI need to be valid for the target device, otherwise FUS will respond with Err 408
 1. If you dont have the IMEI of a certain device you want, usually googling <model> "imei swappa" will bring up valid ones
 1. (Optional) Use `--test` or `-t` flag to download test firmware from version.test.xml instead of production version.xml
+1. (Optional) Use `--decrypt` or `-d` flag with `--test` to decrypt MD5-encoded test firmware versions (requires test mode)
 
 Windows users may choose the smaller but not-self-contained variant if [.NET runtime](https://dotnet.microsoft.com/download/dotnet/5.0/runtime) is present.
 
