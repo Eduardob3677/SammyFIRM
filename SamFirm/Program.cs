@@ -60,6 +60,7 @@ namespace SamFirm
 
             Console.WriteLine($"\n  Latest version:\n    PDA: {versionPDA}\n    CSC: {versionCSC}\n    MODEM: {(versionMODEM.Length > 0 ? versionMODEM : "N/A")}");
 
+            Console.WriteLine("\n  Fetching firmware information...");
             Utils.FUSClient.GenerateNonce();
 
             string binaryInfoXMLString;
@@ -73,13 +74,16 @@ namespace SamFirm
             string binaryModelPath = binaryInfo.XPathSelectElement("./FUSMsg/FUSBody/Put/MODEL_PATH/Data").Value;
             string binaryVersion = binaryInfo.XPathSelectElement("./FUSMsg/FUSBody/Results/LATEST_FW_VERSION/Data").Value;
 
+            Console.WriteLine($"  Firmware file: {binaryFilename}");
+            Console.WriteLine($"  Firmware size: {binaryByteSize / (1024.0 * 1024.0 * 1024.0):F2} GB");
+
             Utils.FUSClient.DownloadBinaryInit(Utils.Msg.GetBinaryInitMsg(binaryFilename, Utils.FUSClient.NonceDecrypted), out _);
 
             Utils.File.FileSize = binaryByteSize;
             Utils.File.SetDecryptKey(binaryVersion, binaryLogicValue);
 
             string savePath = Path.GetFullPath($"./{model}_{region}");
-            Console.WriteLine($"\nSaving to: {savePath}");
+            Console.WriteLine($"\n  Save path: {savePath}");
 
 
             await Utils.FUSClient.DownloadBinary(binaryModelPath, binaryFilename, savePath);
