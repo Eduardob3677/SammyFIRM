@@ -87,19 +87,37 @@ namespace SamFirm
                     string url = $"http://fota-cloud-dn.ospserver.net/firmware/{region}/{model}/{versionFile}";
                     string xmlString = await _httpClient.GetStringAsync(url);
                     
-                    var decryptedVersions = Utils.MD5Decrypt.DecryptMD5Versions(xmlString, model, region);
+                    var decryptedVersions = await Utils.MD5Decrypt.DecryptMD5VersionsAsync(xmlString, model, region);
                     
                     if (decryptedVersions.Count > 0)
                     {
-                        Console.WriteLine($"\n=== Decrypted {decryptedVersions.Count} Test Firmware Versions ===");
-                        foreach (var kvp in decryptedVersions.OrderByDescending(x => x.Value))
+                        Console.WriteLine($"\n╔════════════════════════════════════════════════════════════════════╗");
+                        Console.WriteLine($"║  Decrypted {decryptedVersions.Count} Test Firmware Versions");
+                        Console.WriteLine($"╚════════════════════════════════════════════════════════════════════╝\n");
+                        
+                        var sortedVersions = decryptedVersions.OrderByDescending(x => x.Value).ToList();
+                        int count = 1;
+                        foreach (var kvp in sortedVersions)
                         {
-                            Console.WriteLine($"  {kvp.Value}");
-                            Console.WriteLine($"    MD5: {kvp.Key}");
+                            Console.WriteLine($"  [{count}] {kvp.Value}");
+                            count++;
                         }
+                        
+                        Console.WriteLine($"\n╔════════════════════════════════════════════════════════════════════╗");
+                        Console.WriteLine($"║  Latest Test Firmware: {sortedVersions[0].Value}");
+                        Console.WriteLine($"╚════════════════════════════════════════════════════════════════════╝");
+                        
+                        Console.WriteLine("\n💡 To download a specific version, run without --decrypt flag");
+                        Console.WriteLine($"   Example: ./SamFirm -m {model} -r {region} -i {imei} --test");
+                    }
+                    else
+                    {
+                        Console.WriteLine("\n❌ No versions could be decrypted. This may happen if:");
+                        Console.WriteLine("   - The model/region combination is incorrect");
+                        Console.WriteLine("   - The firmware uses a different naming scheme");
+                        Console.WriteLine("   - More time is needed for brute-force decryption");
                     }
                     
-                    Console.WriteLine("\nDecryption complete. Use without --decrypt flag to download a specific version.");
                     return;
                 }
 

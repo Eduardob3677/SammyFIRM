@@ -1,8 +1,10 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Net.Http;
 using System.Security.Cryptography;
 using System.Text;
+using System.Threading.Tasks;
 using System.Xml.Linq;
 using System.Xml.XPath;
 
@@ -14,7 +16,7 @@ namespace SamFirm.Utils
         /// Decrypt MD5-encoded firmware versions from version.test.xml
         /// Based on the brute-force approach from SamsungTestFirmwareVersionDecrypt
         /// </summary>
-        public static Dictionary<string, string> DecryptMD5Versions(string xmlContent, string model, string region)
+        public static async Task<Dictionary<string, string>> DecryptMD5VersionsAsync(string xmlContent, string model, string region)
         {
             var decryptedVersions = new Dictionary<string, string>();
             
@@ -32,36 +34,106 @@ namespace SamFirm.Utils
                     return decryptedVersions;
                 }
 
-                Console.WriteLine($"Found {md5Values.Count} MD5 values to decrypt...");
+                int originalMD5Count = md5Values.Count;
+                Console.WriteLine($"Found {originalMD5Count} MD5 values to decrypt...");
 
                 // Get the latest production version to determine base codes
                 string latestVer = doc.XPathSelectElement("./versioninfo/firmware/version/latest")?.Value ?? "";
                 
+                // If no version in test XML, try to get it from production XML
                 if (string.IsNullOrEmpty(latestVer))
                 {
-                    Console.WriteLine("No production version found, using default parameters");
-                    return decryptedVersions;
+                    Console.WriteLine("No production version in test XML, fetching from production server...");
+                    try
+                    {
+                        string prodUrl = $"http://fota-cloud-dn.ospserver.net/firmware/{region}/{model}/version.xml";
+                        string prodXmlString = await new HttpClient().GetStringAsync(prodUrl);
+                        XDocument prodDoc = XDocument.Parse(prodXmlString);
+                        latestVer = prodDoc.XPathSelectElement("./versioninfo/firmware/version/latest")?.Value ?? "";
+                        
+                        if (!string.IsNullOrEmpty(latestVer))
+                        {
+                            Console.WriteLine($"Found production version: {latestVer}");
+                        }
+                    }
+                    catch
+                    {
+                        Console.WriteLine("Could not fetch production version, will construct from model name");
+                    }
                 }
-
-                var verParts = latestVer.Split('/');
-                if (verParts.Length < 3)
+                
+                string firstCode, secondCode, thirdCode;
+                
+                if (!string.IsNullOrEmpty(latestVer))
                 {
-                    Console.WriteLine("Invalid version format");
-                    return decryptedVersions;
+                    var verParts = latestVer.Split('/');
+                    if (verParts.Length >= 3)
+                    {
+                        // Extract base codes from production version
+                        // Python uses [:-6] which removes last 6 characters
+                        firstCode = verParts[0].Substring(0, verParts[0].Length - 6);  // e.g., S916BXX (without final S/U)
+                        secondCode = verParts[1].Substring(0, verParts[1].Length - 5); // e.g., S916BOXM
+                        thirdCode = verParts[2].Length > 6 ? verParts[2].Substring(0, verParts[2].Length - 6) : ""; // e.g., S916BXX
+                        
+                        Console.WriteLine($"Using production version as reference: {latestVer}");
+                        Console.WriteLine($"Base codes: {firstCode}, {secondCode}, {thirdCode}");
+                    }
+                    else
+                    {
+                        Console.WriteLine("Invalid production version format, using model-based codes");
+                        firstCode = model.Replace("SM-", "").Replace("-", "") + "XX"; // Generic
+                        secondCode = model.Replace("SM-", "").Replace("-", "") + "OXM";
+                        thirdCode = model.Replace("SM-", "").Replace("-", "") + "XX";
+                    }
+                }
+                else
+                {
+                    // No production version available, construct from model
+                    Console.WriteLine("No production version found, constructing from model name");
+                    string modelCode = model.Replace("SM-", "").Replace("-", "");
+                    
+                    // Try to guess region codes - try multiple possibilities
+                    string[] regionPrefixes;
+                    
+                    if (region == "CHC" || region == "CHN")
+                    {
+                        regionPrefixes = new[] { "ZCS", "ZCU", "ZHU" }; // China variants
+                    }
+                    else if (region == "EUX" || region.StartsWith("E"))
+                    {
+                        regionPrefixes = new[] { "XXU", "DBT", "OXM" }; // Europe variants
+                    }
+                    else if (region == "KOO")
+                    {
+                        regionPrefixes = new[] { "KSU", "SKC", "KTC" }; // Korea variants
+                    }
+                    else if (region == "XAA")
+                    {
+                        regionPrefixes = new[] { "UEU", "TMB", "ATT" }; // USA variants
+                    }
+                    else
+                    {
+                        regionPrefixes = new[] { "XXU", "OXM" }; // Generic global
+                    }
+                    
+                    // Try first prefix
+                    firstCode = modelCode + regionPrefixes[0];
+                    secondCode = modelCode + (region.Length == 3 ? region : "OXM"); // Use actual region or OXM
+                    thirdCode = modelCode + regionPrefixes[0];
+                    
+                    Console.WriteLine($"Constructed base codes: {firstCode}, {secondCode}, {thirdCode}");
+                    Console.WriteLine($"Will also try alternate prefixes: {string.Join(", ", regionPrefixes.Skip(1))}");
                 }
 
-                // Extract base codes from production version
-                string firstCode = verParts[0].Substring(0, verParts[0].Length - 6);  // e.g., S9280ZC
-                string secondCode = verParts[1].Substring(0, verParts[1].Length - 5); // e.g., S9280CHC
-                string thirdCode = verParts[2].Length > 6 ? verParts[2].Substring(0, verParts[2].Length - 6) : ""; // e.g., S9280ZC
-
-                // Get current year and start parameters
+                // Get current year and start parameters  
                 int currentYear = DateTime.Now.Year;
-                char startYear = (char)('A' + (currentYear - 2001 - 3)); // Start from 3 years ago
-                char endYear = (char)('A' + (currentYear - 2001 + 1));   // Up to next year
+                // Expand range: from 5 years ago to 2 years in future
+                char startYear = (char)('A' + Math.Max(0, currentYear - 2001 - 5));
+                char endYear = (char)('A' + Math.Min(25, currentYear - 2001 + 2));
                 
                 Console.WriteLine($"Decrypting versions for {model}/{region}...");
-                Console.WriteLine($"Base codes: {firstCode}, {secondCode}, {thirdCode}");
+                Console.WriteLine($"Year range: {startYear} ({2001 + (startYear - 'A')}) to {endYear} ({2001 + (endYear - 'A')})");
+                Console.WriteLine($"This may take several minutes depending on the number of versions...\n");
                 
                 int decryptCount = 0;
                 int totalAttempts = 0;
@@ -82,9 +154,10 @@ namespace SamFirm.Utils
                                     {
                                         totalAttempts++;
                                         
-                                        string versionSuffix = $"{updateType}{blVersion}{majorVer}{year}{month}{build}";
-                                        string thirdPart = string.IsNullOrEmpty(thirdCode) ? "" : thirdCode + versionSuffix;
-                                        string version = $"{firstCode}{versionSuffix}/{secondCode}{versionSuffix}/{thirdPart}";
+                                        string versionSuffix = $"{blVersion}{majorVer}{year}{month}{build}";
+                                        string thirdPart = string.IsNullOrEmpty(thirdCode) ? "" : thirdCode + updateType + versionSuffix;
+                                        // NOTE: SecondCode does NOT get the updateType prefix, only randomVersion
+                                        string version = $"{firstCode}{updateType}{versionSuffix}/{secondCode}{versionSuffix}/{thirdPart}";
 
                                         // Calculate MD5 and check if it matches
                                         string md5Hash = CalculateMD5(version);
@@ -92,14 +165,14 @@ namespace SamFirm.Utils
                                         {
                                             decryptedVersions[md5Hash] = version;
                                             decryptCount++;
-                                            Console.WriteLine($"Decrypted: {version} (MD5: {md5Hash})");
+                                            Console.WriteLine($"✓ Decrypted [{decryptCount}/{originalMD5Count}]: {version}");
                                             
                                             // Remove from set to speed up future checks
                                             md5Values.Remove(md5Hash);
                                             
                                             if (md5Values.Count == 0)
                                             {
-                                                Console.WriteLine($"All MD5 values decrypted! ({decryptCount} versions)");
+                                                Console.WriteLine($"\n✅ All {decryptCount} MD5 values successfully decrypted!");
                                                 return decryptedVersions;
                                             }
                                         }
@@ -107,7 +180,7 @@ namespace SamFirm.Utils
                                         // Show progress every 100k attempts
                                         if (totalAttempts % 100000 == 0)
                                         {
-                                            Console.Write($"\rTried {totalAttempts:N0} combinations, decrypted {decryptCount}/{decryptCount + md5Values.Count}...");
+                                            Console.Write($"\r⏳ Progress: {totalAttempts:N0} attempts, {decryptCount}/{originalMD5Count} decrypted ({(decryptCount * 100.0 / originalMD5Count):F1}%)...");
                                         }
                                     }
                                 }
@@ -116,8 +189,10 @@ namespace SamFirm.Utils
                     }
                 }
 
-                Console.WriteLine($"\nDecryption complete: {decryptCount} out of {decryptCount + md5Values.Count} versions decrypted");
-                Console.WriteLine($"Total attempts: {totalAttempts:N0}");
+                Console.WriteLine($"\n\n📊 Decryption Summary:");
+                Console.WriteLine($"   Total attempts: {totalAttempts:N0}");
+                Console.WriteLine($"   Decrypted: {decryptCount} out of {originalMD5Count} versions ({(decryptCount * 100.0 / originalMD5Count):F1}%)");
+                Console.WriteLine($"   Remaining: {md5Values.Count} versions could not be decrypted");
             }
             catch (Exception ex)
             {
