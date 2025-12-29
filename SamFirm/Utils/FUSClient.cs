@@ -43,7 +43,8 @@ namespace SamFirm.Utils
             string url = "http://cloud-neofussvr.samsungmobile.com/NF_DownloadBinaryForMass.do?file=" + path + file;
 
             Directory.CreateDirectory(saveTo);
-            string encryptedPath = Path.Combine(saveTo, $"{file}.enc2");
+            string sanitizedFileName = Path.GetFileName(file);
+            string encryptedPath = Path.Combine(saveTo, $"{sanitizedFileName}.enc2");
 
             if (!await TryDownloadWithAria2c(url, encryptedPath))
             {
@@ -145,7 +146,7 @@ namespace SamFirm.Utils
                     }
                 }
 
-                System.IO.File.SetAttributes(configPath, FileAttributes.Hidden | FileAttributes.Temporary);
+                System.IO.File.SetAttributes(configPath, FileAttributes.Hidden);
 
                 var psi = new ProcessStartInfo
                 {
@@ -191,7 +192,8 @@ namespace SamFirm.Utils
                         return false;
                     }
 
-                    return System.IO.File.Exists(outputPath);
+                    var downloadedFile = new FileInfo(outputPath);
+                    return downloadedFile.Exists && downloadedFile.Length > 0;
                 }
                 finally
                 {
