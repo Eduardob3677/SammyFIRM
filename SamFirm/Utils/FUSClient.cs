@@ -22,6 +22,45 @@ namespace SamFirm.Utils
             request.CookieContainer = FUSClient.Cookies;
             return request;
         }
+
+        public static HttpWebRequest CreateForOsp(string requestUriString, string model, string region)
+        {
+            HttpWebRequest request = (HttpWebRequest)WebRequest.Create(requestUriString);
+            request.Headers["Cache-Control"] = "no-cache";
+            request.UserAgent = "Kies2.0_FUS";
+            
+            // Determine if this is an OSP endpoint
+            bool isOspEndpoint = requestUriString.Contains("ospserver.net") || requestUriString.Contains("iotnucleon.iot.nokia.com");
+            
+            // Use OAuth ONLY if enabled AND endpoint is OSP (not FUS)
+            if (FUSClient.UseOAuth && isOspEndpoint)
+            {
+                // Generate OAuth 1.0 Authorization header for OSP endpoints
+                var uri = new Uri(requestUriString);
+                var oauthHeader = OAuthHelper.GenerateOAuthHeader("POST", requestUriString, uri.Query);
+                request.Headers.Add("Authorization", oauthHeader);
+                Console.WriteLine($"  Using OAuth 1.0 for OSP endpoint");
+            }
+            else
+            {
+                // Use traditional FUS authentication for neofussvr endpoints
+                request.Headers.Add("Authorization",
+                    $"FUS nonce=\"{FUSClient.Nonce}\", signature=\"{(FUSClient.NonceDecrypted.Length > 0 ? Auth.GetAuthorization(FUSClient.NonceDecrypted) : "")}\", nc=\"\", type=\"\", realm=\"\", newauth=\"1\"");
+                if (isOspEndpoint)
+                {
+                    Console.WriteLine($"  Using FUS auth for OSP endpoint (OAuth disabled)");
+                }
+            }
+            
+            // Add OSP-specific headers based on FOTA agent analysis
+            request.Headers.Add("X-Sec-Dm-DeviceModel", model);
+            request.Headers.Add("X-Sec-Dm-CustomerCode", region);
+            request.Headers.Add("x-osp-version", "v1");
+            request.Headers.Add("Accept-Encoding", "identity");
+            request.ContentType = "text/xml";
+            request.CookieContainer = FUSClient.Cookies;
+            return request;
+        }
     }
 
     internal static class FUSClient
@@ -29,6 +68,9 @@ namespace SamFirm.Utils
         public static CookieContainer Cookies = new CookieContainer();
         public static string Nonce { get; set; } = string.Empty;
         public static string NonceDecrypted { get; set; } = string.Empty;
+        public static string Model { get; set; } = string.Empty;
+        public static string Region { get; set; } = string.Empty;
+        public static bool UseOAuth { get; set; } = false;
 
 
         private static readonly HttpClient _httpClient = new HttpClient();
@@ -83,7 +125,28 @@ namespace SamFirm.Utils
         private static int XMLFUSRequest(string URL, string xml, out string xmlresponse)
         {
             xmlresponse = null;
-            HttpWebRequest wr = FUSRequest.Create(URL);
+            HttpWebRequest wr;
+            
+            // Determine if this is an OSP endpoint (version checking) or FUS endpoint (binary download)
+            bool isOspEndpoint = URL.Contains("ospserver.net") || URL.Contains("iotnucleon.iot.nokia.com");
+            
+            // Use OAuth ONLY for OSP endpoints, FUS auth for neofussvr endpoints
+            if (UseOAuth && isOspEndpoint && !string.IsNullOrEmpty(Model) && !string.IsNullOrEmpty(Region))
+            {
+                // OAuth for OSP server (version checking, test servers)
+                wr = FUSRequest.CreateForOsp(URL, Model, Region);
+            }
+            else if (!string.IsNullOrEmpty(Model) && !string.IsNullOrEmpty(Region))
+            {
+                // FUS auth with OSP headers for neofussvr
+                wr = FUSRequest.CreateForOsp(URL, Model, Region);
+            }
+            else
+            {
+                // Basic FUS auth without OSP headers
+                wr = FUSRequest.Create(URL);
+            }
+            
             wr.CookieContainer = Cookies;
             wr.Method = "POST";
             byte[] bytes = Encoding.ASCII.GetBytes(Regex.Replace(xml, @"\r\n?|\n|\t", string.Empty));

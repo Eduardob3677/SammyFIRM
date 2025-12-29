@@ -27,11 +27,18 @@ namespace SamFirm
 
             [Option('t', "test", Required = false, HelpText = "Use test firmware server (version.test.xml)")]
             public bool UseTestServer { get; set; }
+
+            [Option("use-oauth", Required = false, HelpText = "Use OAuth 1.0 authentication for test servers")]
+            public bool UseOAuth { get; set; }
+            
+            [Option("staging", Required = false, HelpText = "Use staging server (stg-fota-cloud.samsungdms.net)")]
+            public bool UseStaging { get; set; }
         }
 
         private static readonly HttpClient _httpClient = new HttpClient();
         private const string TestVersionUrlTemplate = "https://fota-cloud-dn.ospserver.net/firmware/{0}/{1}/version.test.xml";
         private const string RegularVersionUrlTemplate = "http://fota-cloud-dn.ospserver.net/firmware/{0}/{1}/version.xml";
+        private const string StagingVersionUrlTemplate = "https://stg-fota-cloud.samsungdms.net/firmware/{0}/{1}/version.xml";
         private const int PdaSuffixLength = 6;
         private const int CscSuffixLength = 5;
         private const string MonthChars = "ABCDEFGHIJKL";
@@ -94,8 +101,15 @@ namespace SamFirm
                                 foreach (char serial in serials)
                                 {
                                     string randomVersion = $"{bl}{upd}{year}{month}{serial}";
+                                    string pdaPart = $"{firstCode}{i1}{randomVersion}";
+                                    string cscPart = $"{secondCode}{randomVersion}";
                                     string cpPart = string.IsNullOrEmpty(thirdCode) ? string.Empty : $"{thirdCode}{i1}{randomVersion}";
-                                    string candidate = $"{firstCode}{i1}{randomVersion}/{secondCode}{randomVersion}/{cpPart}";
+                                    
+                                    // Build version string: PDA/CSC or PDA/CSC/MODEM depending on availability
+                                    string candidate = string.IsNullOrEmpty(cpPart) 
+                                        ? $"{pdaPart}/{cscPart}"
+                                        : $"{pdaPart}/{cscPart}/{cpPart}";
+                                    
                                     string hash = ComputeMd5(candidate);
                                     if (md5Targets.Contains(hash))
                                     {
@@ -111,11 +125,22 @@ namespace SamFirm
             return null;
         }
 
-        private static async Task<string> GetLatestVersion(string region, string model, bool useTestServer)
+        private static async Task<string> GetLatestVersion(string region, string model, bool useTestServer, bool useStaging)
         {
-            string url = useTestServer
-                ? string.Format(TestVersionUrlTemplate, region, model)
-                : string.Format(RegularVersionUrlTemplate, region, model);
+            string url;
+            if (useStaging)
+            {
+                // Use staging server
+                url = string.Format(StagingVersionUrlTemplate, region, model);
+            }
+            else if (useTestServer)
+            {
+                url = string.Format(TestVersionUrlTemplate, region, model);
+            }
+            else
+            {
+                url = string.Format(RegularVersionUrlTemplate, region, model);
+            }
 
             string xmlString;
             try
@@ -128,7 +153,7 @@ namespace SamFirm
             }
             XDocument document = XDocument.Parse(xmlString);
 
-            if (!useTestServer)
+            if (!useTestServer && !useStaging)
             {
                 XElement latestEl = document.XPathSelectElement("./versioninfo/firmware/version/latest");
                 if (latestEl == null) throw new InvalidOperationException("version.xml missing <latest> element");
@@ -162,6 +187,8 @@ namespace SamFirm
             string region = "";
             string imei = "";
             bool useTestServer = false;
+            bool useOAuth = false;
+            bool useStaging = false;
             Parser.Default.ParseArguments<Options>(args)
             .WithParsed(o =>
             {
@@ -169,17 +196,22 @@ namespace SamFirm
                 region = o.Region;
                 imei = o.imei;
                 useTestServer = o.UseTestServer;
+                useOAuth = o.UseOAuth;
+                useStaging = o.UseStaging;
             });
 
             if (string.IsNullOrEmpty(model) || string.IsNullOrEmpty(region) || string.IsNullOrEmpty(imei)) return;
 
             Console.OutputEncoding = Encoding.UTF8;
-            Console.WriteLine($"\n  Model: {model}\n  Region: {region}" + (useTestServer ? "\n  Using test firmware server" : string.Empty));
+            Console.WriteLine($"\n  Model: {model}\n  Region: {region}" + 
+                (useStaging ? "\n  Using staging server (stg-fota-cloud.samsungdms.net)" : string.Empty) +
+                (useTestServer ? "\n  Using test firmware server" : string.Empty) +
+                (useOAuth ? "\n  Using OAuth 1.0 authentication" : string.Empty));
 
             string latestVersionStr;
             try
             {
-                latestVersionStr = await GetLatestVersion(region, model, useTestServer);
+                latestVersionStr = await GetLatestVersion(region, model, useTestServer, useStaging);
             }
             catch (Exception ex)
             {
@@ -194,18 +226,53 @@ namespace SamFirm
 
             Console.WriteLine($"\n  Latest version:\n    PDA: {versionPDA}\n    CSC: {versionCSC}\n    MODEM: {(versionMODEM.Length > 0 ? versionMODEM : "N/A")}");
 
+            // Set model and region for OSP headers
+            Utils.FUSClient.Model = model;
+            Utils.FUSClient.Region = region;
+            Utils.FUSClient.UseOAuth = useOAuth;
+            
             Utils.FUSClient.GenerateNonce();
 
             string binaryInfoXMLString;
-            int informStatus = Utils.FUSClient.DownloadBinaryInform(
-                Utils.Msg.GetBinaryInformMsg(version, region, model, imei, Utils.FUSClient.NonceDecrypted), out binaryInfoXMLString);
+            Console.WriteLine($"\nSending BinaryInform request...");
+            Console.WriteLine($"  Model: {model}, Region: {region}");
+            Console.WriteLine($"  Version: {version}");
+            Console.WriteLine($"  IMEI: {imei}");
+            
+            // Generate and display the XML message
+            string xmlMessage = Utils.Msg.GetBinaryInformMsg(version, region, model, imei, Utils.FUSClient.NonceDecrypted);
+            Console.WriteLine($"\n--- XML Request ---");
+            Console.WriteLine(xmlMessage);
+            Console.WriteLine($"--- End Request ---\n");
+            
+            int informStatus = Utils.FUSClient.DownloadBinaryInform(xmlMessage, out binaryInfoXMLString);
+            
+            Console.WriteLine($"  Response status: {informStatus}");
+            
             if (informStatus != 200 || string.IsNullOrEmpty(binaryInfoXMLString))
             {
                 Console.WriteLine($"Failed to fetch binary info (status {informStatus}).");
                 return;
             }
 
+            Console.WriteLine($"\n--- XML Response ---");
+            Console.WriteLine(binaryInfoXMLString);
+            Console.WriteLine($"--- End Response ---\n");
+
             XDocument binaryInfo = XDocument.Parse(binaryInfoXMLString);
+            
+            // Check for error status in response
+            XElement statusEl = binaryInfo.XPathSelectElement("./FUSMsg/FUSBody/Results/Status");
+            if (statusEl != null && int.TryParse(statusEl.Value, out int statusCode) && statusCode != 200)
+            {
+                Console.WriteLine($"Server returned error status {statusCode}.");
+                if (statusCode == 408)
+                {
+                    Console.WriteLine("Error 408: Region, Model and IMEI need to be valid for the target device.");
+                }
+                return;
+            }
+            
             XElement sizeEl = binaryInfo.XPathSelectElement("./FUSMsg/FUSBody/Put/BINARY_BYTE_SIZE/Data");
             XElement nameEl = binaryInfo.XPathSelectElement("./FUSMsg/FUSBody/Put/BINARY_NAME/Data");
             XElement logicEl = binaryInfo.XPathSelectElement("./FUSMsg/FUSBody/Put/LOGIC_VALUE_FACTORY/Data");
