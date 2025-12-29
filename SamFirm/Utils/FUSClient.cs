@@ -29,20 +29,27 @@ namespace SamFirm.Utils
             request.Headers["Cache-Control"] = "no-cache";
             request.UserAgent = "Kies2.0_FUS";
             
-            // Use OAuth if enabled, otherwise use FUS auth
-            if (FUSClient.UseOAuth)
+            // Determine if this is an OSP endpoint
+            bool isOspEndpoint = requestUriString.Contains("ospserver.net") || requestUriString.Contains("iotnucleon.iot.nokia.com");
+            
+            // Use OAuth ONLY if enabled AND endpoint is OSP (not FUS)
+            if (FUSClient.UseOAuth && isOspEndpoint)
             {
-                // Generate OAuth 1.0 Authorization header
+                // Generate OAuth 1.0 Authorization header for OSP endpoints
                 var uri = new Uri(requestUriString);
                 var oauthHeader = OAuthHelper.GenerateOAuthHeader("POST", requestUriString, uri.Query);
                 request.Headers.Add("Authorization", oauthHeader);
-                Console.WriteLine($"  Using OAuth 1.0 authentication");
+                Console.WriteLine($"  Using OAuth 1.0 for OSP endpoint");
             }
             else
             {
-                // Use traditional FUS authentication
+                // Use traditional FUS authentication for neofussvr endpoints
                 request.Headers.Add("Authorization",
                     $"FUS nonce=\"{FUSClient.Nonce}\", signature=\"{(FUSClient.NonceDecrypted.Length > 0 ? Auth.GetAuthorization(FUSClient.NonceDecrypted) : "")}\", nc=\"\", type=\"\", realm=\"\", newauth=\"1\"");
+                if (isOspEndpoint)
+                {
+                    Console.WriteLine($"  Using FUS auth for OSP endpoint (OAuth disabled)");
+                }
             }
             
             // Add OSP-specific headers based on FOTA agent analysis
@@ -120,13 +127,23 @@ namespace SamFirm.Utils
             xmlresponse = null;
             HttpWebRequest wr;
             
-            // Use OSP-specific headers if model and region are set
-            if (!string.IsNullOrEmpty(Model) && !string.IsNullOrEmpty(Region))
+            // Determine if this is an OSP endpoint (version checking) or FUS endpoint (binary download)
+            bool isOspEndpoint = URL.Contains("ospserver.net") || URL.Contains("iotnucleon.iot.nokia.com");
+            
+            // Use OAuth ONLY for OSP endpoints, FUS auth for neofussvr endpoints
+            if (UseOAuth && isOspEndpoint && !string.IsNullOrEmpty(Model) && !string.IsNullOrEmpty(Region))
             {
+                // OAuth for OSP server (version checking, test servers)
+                wr = FUSRequest.CreateForOsp(URL, Model, Region);
+            }
+            else if (!string.IsNullOrEmpty(Model) && !string.IsNullOrEmpty(Region))
+            {
+                // FUS auth with OSP headers for neofussvr
                 wr = FUSRequest.CreateForOsp(URL, Model, Region);
             }
             else
             {
+                // Basic FUS auth without OSP headers
                 wr = FUSRequest.Create(URL);
             }
             

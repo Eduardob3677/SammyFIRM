@@ -13,8 +13,9 @@ namespace SamFirm.Utils
     /// </summary>
     internal static class OAuthHelper
     {
-        // Service ID from Flavor.smali
-        private const string SERVICE_ID = "x6g1q14r75";
+        // Service IDs from Flavor.smali
+        private const string SERVICE_ID_X6G = "x6g1q14r75";
+        private const string SERVICE_ID_MFORM = "mformtest2020";
         
         // OAuth keys extracted from libdprw.so and profile analysis
         // Found near getTimeKey/getTimeValue methods
@@ -22,20 +23,27 @@ namespace SamFirm.Utils
         private const string OAUTH_CONSUMER_SECRET_PRIMARY = "2cbmvps5z4";
         
         // From x6g1q14r75 profile credentials (SyncML DM auth)
+        // Server: ns.ospserver.net/v1/device/magicsync/mdm
         // Server Password (base64): T1NQIERNIFNIcnZIcg== -> "OSP DM SHrvHr"
-        private const string OAUTH_CONSUMER_KEY_PROFILE = "x6g1q14r75";
-        private const string OAUTH_CONSUMER_SECRET_PROFILE = "OSP DM SHrvHr";
+        private const string OAUTH_CONSUMER_KEY_X6G = "x6g1q14r75";
+        private const string OAUTH_CONSUMER_SECRET_X6G = "OSP DM SHrvHr";
         
-        // Client credentials from profile
-        private const string CLIENT_PASSWORD = "74V1gEt664mAKin01";
+        // From mformtest2020 profile credentials (SyncML DM auth)
+        // Server: https://iotnucleon.iot.nokia.com/oma/iop
+        // Server Password: mform, Client Password: mform
+        private const string OAUTH_CONSUMER_KEY_MFORM = "mformtest2020";
+        private const string OAUTH_CONSUMER_SECRET_MFORM = "mform";
+        
+        // Client credentials from x6g1q14r75 profile
+        private const string CLIENT_PASSWORD_X6G = "74V1gEt664mAKin01";
         
         // Hex keys from libdprw.so
         private const string OAUTH_CONSUMER_KEY_HEX = "5763D0052DC1462E13751F753384E9A9";
         private const string OAUTH_CONSUMER_SECRET_HEX = "AF87056C54E8BFD81142D235F4F8E552";
 
-        // Current active keys (can be switched for testing)
-        private static string ActiveConsumerKey = OAUTH_CONSUMER_KEY_PROFILE;
-        private static string ActiveConsumerSecret = OAUTH_CONSUMER_SECRET_PROFILE;
+        // Current active keys (default to mformtest2020 for Nokia test server)
+        private static string ActiveConsumerKey = OAUTH_CONSUMER_KEY_MFORM;
+        private static string ActiveConsumerSecret = OAUTH_CONSUMER_SECRET_MFORM;
 
         /// <summary>
         /// Generate OAuth 1.0 Authorization header
@@ -77,25 +85,30 @@ namespace SamFirm.Utils
         {
             switch (keySetIndex)
             {
-                case 1: // Profile-based keys
-                    ActiveConsumerKey = OAUTH_CONSUMER_KEY_PROFILE;
-                    ActiveConsumerSecret = OAUTH_CONSUMER_SECRET_PROFILE;
-                    Console.WriteLine($"  Using Profile keys: {SERVICE_ID}");
+                case 1: // mformtest2020 profile (Nokia test server)
+                    ActiveConsumerKey = OAUTH_CONSUMER_KEY_MFORM;
+                    ActiveConsumerSecret = OAUTH_CONSUMER_SECRET_MFORM;
+                    Console.WriteLine($"  Using mformtest2020 keys: {OAUTH_CONSUMER_KEY_MFORM}");
                     break;
-                case 2: // Library extracted keys
+                case 2: // x6g1q14r75 profile (OSP server)
+                    ActiveConsumerKey = OAUTH_CONSUMER_KEY_X6G;
+                    ActiveConsumerSecret = OAUTH_CONSUMER_SECRET_X6G;
+                    Console.WriteLine($"  Using x6g1q14r75 keys: {SERVICE_ID_X6G}");
+                    break;
+                case 3: // Library extracted keys
                     ActiveConsumerKey = OAUTH_CONSUMER_KEY_PRIMARY;
                     ActiveConsumerSecret = OAUTH_CONSUMER_SECRET_PRIMARY;
                     Console.WriteLine($"  Using Primary keys from libdprw.so");
                     break;
-                case 3: // Hex keys
+                case 4: // Hex keys
                     ActiveConsumerKey = OAUTH_CONSUMER_KEY_HEX;
                     ActiveConsumerSecret = OAUTH_CONSUMER_SECRET_HEX;
                     Console.WriteLine($"  Using Hex keys from libdprw.so");
                     break;
-                case 4: // Client password as secret
-                    ActiveConsumerKey = OAUTH_CONSUMER_KEY_PROFILE;
-                    ActiveConsumerSecret = CLIENT_PASSWORD;
-                    Console.WriteLine($"  Using Profile key with Client password");
+                case 5: // x6g1q14r75 with client password
+                    ActiveConsumerKey = OAUTH_CONSUMER_KEY_X6G;
+                    ActiveConsumerSecret = CLIENT_PASSWORD_X6G;
+                    Console.WriteLine($"  Using x6g1q14r75 key with Client password");
                     break;
                 default:
                     // Keep current
