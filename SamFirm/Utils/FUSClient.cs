@@ -178,7 +178,11 @@ namespace SamFirm.Utils
                         {
                             process.Kill();
                         }
-                        catch
+                        catch (InvalidOperationException)
+                        {
+                            // process already exited
+                        }
+                        catch (System.ComponentModel.Win32Exception)
                         {
                             // ignore kill errors
                         }
@@ -212,7 +216,11 @@ namespace SamFirm.Utils
                     {
                         System.IO.File.Delete(configPath);
                     }
-                    catch
+                    catch (IOException)
+                    {
+                        // ignore cleanup failures
+                    }
+                    catch (UnauthorizedAccessException)
                     {
                         // ignore cleanup failures
                     }
