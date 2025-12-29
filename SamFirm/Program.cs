@@ -213,6 +213,19 @@ namespace SamFirm
             }
 
             XDocument binaryInfo = XDocument.Parse(binaryInfoXMLString);
+            
+            // Check for error status in response
+            XElement statusEl = binaryInfo.XPathSelectElement("./FUSMsg/FUSBody/Results/Status");
+            if (statusEl != null && int.TryParse(statusEl.Value, out int statusCode) && statusCode != 200)
+            {
+                Console.WriteLine($"Server returned error status {statusCode}.");
+                if (statusCode == 408)
+                {
+                    Console.WriteLine("Error 408: Region, Model and IMEI need to be valid for the target device.");
+                }
+                return;
+            }
+            
             XElement sizeEl = binaryInfo.XPathSelectElement("./FUSMsg/FUSBody/Put/BINARY_BYTE_SIZE/Data");
             XElement nameEl = binaryInfo.XPathSelectElement("./FUSMsg/FUSBody/Put/BINARY_NAME/Data");
             XElement logicEl = binaryInfo.XPathSelectElement("./FUSMsg/FUSBody/Put/LOGIC_VALUE_FACTORY/Data");
