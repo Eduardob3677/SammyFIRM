@@ -146,7 +146,6 @@ namespace SamFirm.Utils
                     }
                 }
 
-                System.IO.File.SetAttributes(configPath, FileAttributes.Hidden);
 
                 var psi = new ProcessStartInfo
                 {
@@ -177,7 +176,7 @@ namespace SamFirm.Utils
                         Console.WriteLine($"aria2c timed out downloading {fileName}, falling back to builtin downloader.");
                         try
                         {
-                            process.Kill(true);
+                            process.Kill();
                         }
                         catch
                         {
