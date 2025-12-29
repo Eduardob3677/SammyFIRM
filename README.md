@@ -2,6 +2,23 @@
 
 A streaming downloader, decryptor and extractor of Samsung firmware.
 
+## 🆕 OAuth OTA Analysis
+
+This repository now includes comprehensive analysis of Samsung's OAuth-based OTA (Over-The-Air) firmware update system. See:
+
+- **[OAuth OTA Analysis Documentation](docs/OAUTH_OTA_ANALYSIS.md)** - Complete OAuth 1.0 implementation analysis
+- **[JAR Extraction Scripts](scripts/)** - Tools to extract and analyze Samsung framework JARs
+
+### Quick Start - OAuth Analysis
+
+```bash
+# Extract and analyze all framework JARs
+./scripts/extract_jars.sh
+
+# View OAuth analysis documentation
+cat docs/OAUTH_OTA_ANALYSIS.md
+```
+
 ## Getting started
 
 ### Run
