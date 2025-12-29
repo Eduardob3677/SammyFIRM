@@ -61,14 +61,19 @@ namespace SamFirm.Utils
                 return;
             }
 
-            using (var stream = System.IO.File.OpenRead(encryptedPath))
+            try
             {
-                File.HandleEncryptedFile(stream, saveTo);
+                using (var stream = System.IO.File.OpenRead(encryptedPath))
+                {
+                    File.HandleEncryptedFile(stream, saveTo);
+                }
             }
-
-            if (System.IO.File.Exists(encryptedPath))
+            finally
             {
-                System.IO.File.Delete(encryptedPath);
+                if (System.IO.File.Exists(encryptedPath))
+                {
+                    System.IO.File.Delete(encryptedPath);
+                }
             }
         }
 
@@ -102,7 +107,7 @@ namespace SamFirm.Utils
         {
             try
             {
-                string dir = Path.GetDirectoryName(outputPath);
+                string dir = Path.GetDirectoryName(outputPath) ?? string.Empty;
                 if (string.IsNullOrEmpty(dir))
                 {
                     dir = Directory.GetCurrentDirectory();
@@ -140,7 +145,7 @@ namespace SamFirm.Utils
 
                 if (process.ExitCode != 0)
                 {
-                    Console.WriteLine($"aria2c download failed with code {process.ExitCode}, falling back to builtin downloader.");
+                    Console.WriteLine($"aria2c download failed with code {process.ExitCode} for {url}, falling back to builtin downloader.");
                     return false;
                 }
 
