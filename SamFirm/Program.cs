@@ -201,11 +201,22 @@ namespace SamFirm
 
             Console.WriteLine($"\n  Latest version:\n    PDA: {versionPDA}\n    CSC: {versionCSC}\n    MODEM: {(versionMODEM.Length > 0 ? versionMODEM : "N/A")}");
 
+            // Set model and region for OSP headers
+            Utils.FUSClient.Model = model;
+            Utils.FUSClient.Region = region;
+            
             Utils.FUSClient.GenerateNonce();
 
             string binaryInfoXMLString;
+            Console.WriteLine($"\nSending BinaryInform request...");
+            Console.WriteLine($"  Model: {model}, Region: {region}");
+            Console.WriteLine($"  Version: {version}");
+            
             int informStatus = Utils.FUSClient.DownloadBinaryInform(
                 Utils.Msg.GetBinaryInformMsg(version, region, model, imei, Utils.FUSClient.NonceDecrypted), out binaryInfoXMLString);
+            
+            Console.WriteLine($"  Response status: {informStatus}");
+            
             if (informStatus != 200 || string.IsNullOrEmpty(binaryInfoXMLString))
             {
                 Console.WriteLine($"Failed to fetch binary info (status {informStatus}).");

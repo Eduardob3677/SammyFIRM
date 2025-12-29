@@ -19,7 +19,7 @@ namespace SamFirm.Utils
                             new XElement("CLIENT_PRODUCT",
                                 new XElement("Data", "Smart Switch")),
                             new XElement("CLIENT_VERSION",
-                                new XElement("Data", "4.3.23123_1")),
+                                new XElement("Data", "4.4.14")),
                             new XElement("DEVICE_IMEI_PUSH",
                                 new XElement("Data", imei)),
                             new XElement("DEVICE_FW_VERSION",

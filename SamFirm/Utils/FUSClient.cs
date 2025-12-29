@@ -22,6 +22,23 @@ namespace SamFirm.Utils
             request.CookieContainer = FUSClient.Cookies;
             return request;
         }
+
+        public static HttpWebRequest CreateForOsp(string requestUriString, string model, string region)
+        {
+            HttpWebRequest request = (HttpWebRequest)WebRequest.Create(requestUriString);
+            request.Headers["Cache-Control"] = "no-cache";
+            request.UserAgent = "Kies2.0_FUS";
+            request.Headers.Add("Authorization",
+                                $"FUS nonce=\"{FUSClient.Nonce}\", signature=\"{(FUSClient.NonceDecrypted.Length > 0 ? Auth.GetAuthorization(FUSClient.NonceDecrypted) : "")}\", nc=\"\", type=\"\", realm=\"\", newauth=\"1\"");
+            // Add OSP-specific headers based on FOTA agent analysis
+            request.Headers.Add("X-Sec-Dm-DeviceModel", model);
+            request.Headers.Add("X-Sec-Dm-CustomerCode", region);
+            request.Headers.Add("x-osp-version", "v1");
+            request.Headers.Add("Accept-Encoding", "identity");
+            request.ContentType = "text/xml";
+            request.CookieContainer = FUSClient.Cookies;
+            return request;
+        }
     }
 
     internal static class FUSClient
@@ -29,6 +46,8 @@ namespace SamFirm.Utils
         public static CookieContainer Cookies = new CookieContainer();
         public static string Nonce { get; set; } = string.Empty;
         public static string NonceDecrypted { get; set; } = string.Empty;
+        public static string Model { get; set; } = string.Empty;
+        public static string Region { get; set; } = string.Empty;
 
 
         private static readonly HttpClient _httpClient = new HttpClient();
@@ -83,7 +102,18 @@ namespace SamFirm.Utils
         private static int XMLFUSRequest(string URL, string xml, out string xmlresponse)
         {
             xmlresponse = null;
-            HttpWebRequest wr = FUSRequest.Create(URL);
+            HttpWebRequest wr;
+            
+            // Use OSP-specific headers if model and region are set
+            if (!string.IsNullOrEmpty(Model) && !string.IsNullOrEmpty(Region))
+            {
+                wr = FUSRequest.CreateForOsp(URL, Model, Region);
+            }
+            else
+            {
+                wr = FUSRequest.Create(URL);
+            }
+            
             wr.CookieContainer = Cookies;
             wr.Method = "POST";
             byte[] bytes = Encoding.ASCII.GetBytes(Regex.Replace(xml, @"\r\n?|\n|\t", string.Empty));
