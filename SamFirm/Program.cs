@@ -21,14 +21,17 @@ namespace SamFirm
 
             [Option('i', "imei", Required = true)]
             public string imei { get; set; }
+
+            [Option('t', "test", Required = false, HelpText = "Use test server (version.test.xml)")]
+            public bool UseTestServer { get; set; }
         }
 
         private static readonly HttpClient _httpClient = new HttpClient();
 
-        private static async Task<string> GetLatestVersion(string region, string model)
+        private static async Task<string> GetLatestVersion(string region, string model, bool useTestServer = false)
         {
-
-            string url = $"http://fota-cloud-dn.ospserver.net/firmware/{region}/{model}/version.xml";
+            string versionFile = useTestServer ? "version.test.xml" : "version.xml";
+            string url = $"http://fota-cloud-dn.ospserver.net/firmware/{region}/{model}/{versionFile}";
             string xmlString = await _httpClient.GetStringAsync(url);
             return XDocument.Parse(xmlString).XPathSelectElement("./versioninfo/firmware/version/latest").Value;
         }
@@ -38,20 +41,26 @@ namespace SamFirm
             string model = "";
             string region = "";
             string imei = "";
+            bool useTestServer = false;
             Parser.Default.ParseArguments<Options>(args)
             .WithParsed(o =>
             {
                 model = o.Model;
                 region = o.Region;
                 imei = o.imei;
+                useTestServer = o.UseTestServer;
             });
 
             if (string.IsNullOrEmpty(model) || string.IsNullOrEmpty(region) || string.IsNullOrEmpty(imei)) return;
 
             Console.OutputEncoding = Encoding.UTF8;
             Console.WriteLine($"\n  Model: {model}\n  Region: {region}");
+            if (useTestServer)
+            {
+                Console.WriteLine("  Mode: Test Server (version.test.xml)");
+            }
 
-            string latestVersionStr = await GetLatestVersion(region, model);
+            string latestVersionStr = await GetLatestVersion(region, model, useTestServer);
             string[] versions = latestVersionStr.Split('/');
             string versionPDA = versions[0];
             string versionCSC = versions[1];

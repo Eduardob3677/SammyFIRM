@@ -10,6 +10,7 @@ A streaming downloader, decryptor and extractor of Samsung firmware.
 1. Run it with `--region` , `--model` and `--i` arguments.
 1. Region, Model and IMEI need to be valid for the target device, otherwise FUS will respond with Err 408
 1. If you dont have the IMEI of a certain device you want, usually googling <model> "imei swappa" will bring up valid ones
+1. (Optional) Use `--test` or `-t` flag to download test firmware from version.test.xml instead of production version.xml
 
 Windows users may choose the smaller but not-self-contained variant if [.NET runtime](https://dotnet.microsoft.com/download/dotnet/5.0/runtime) is present.
 
@@ -22,6 +23,7 @@ Windows users may choose the smaller but not-self-contained variant if [.NET run
 
 ## Example
 
+### Production Firmware
 ```
 > ./SamFirm -m SM-F916N -r KOO -i <valid imei>
 
@@ -47,6 +49,21 @@ Windows users may choose the smaller but not-self-contained variant if [.NET run
 
 /mnt/c/Users/jc/source/repos/SamFirm.NET/SamFirm/dist/linux-x64/SM-F916N_KOO
 BL_F916NTBU1ATJC_CL19952515_QB35429635_REV00_user_low_ship_MULTI_CERT.tar.md5
+```
+
+### Test Firmware
+```
+> ./SamFirm -m SM-F916N -r KOO -i <valid imei> --test
+
+  Model: SM-F916N
+  Region: KOO
+  Mode: Test Server (version.test.xml)
+
+  Latest version:
+    PDA: F916NTBU1ATJC
+    CSC: F916NOKT1ATJC
+    MODEM: F916NKSU1ATJ7
+  ...
 ```
 
 ## License
