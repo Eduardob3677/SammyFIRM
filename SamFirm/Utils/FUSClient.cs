@@ -32,7 +32,13 @@ namespace SamFirm.Utils
         public static string NonceDecrypted { get; set; } = string.Empty;
 
         private const int Aria2Connections = 16;
-        private static readonly TimeSpan Aria2Timeout = TimeSpan.FromMinutes(30);
+        private static readonly TimeSpan Aria2DownloadTimeout = TimeSpan.FromMinutes(30);
+        
+        // Aria2c download configuration constants
+        private const int Aria2MaxTries = 5;
+        private const int Aria2RetryWait = 3;
+        private const int Aria2TimeoutSeconds = 60;
+        private const int Aria2ConnectTimeoutSeconds = 30;
 
 
         private static readonly HttpClient _httpClient = new HttpClient
@@ -137,10 +143,10 @@ namespace SamFirm.Utils
                     $"split={Aria2Connections}",
                     "min-split-size=1M",
                     "max-download-limit=0",
-                    "max-tries=5",
-                    "retry-wait=3",
-                    "timeout=60",
-                    "connect-timeout=30",
+                    $"max-tries={Aria2MaxTries}",
+                    $"retry-wait={Aria2RetryWait}",
+                    $"timeout={Aria2TimeoutSeconds}",
+                    $"connect-timeout={Aria2ConnectTimeoutSeconds}",
                     "allow-overwrite=true",
                     "auto-file-renaming=false",
                     "disable-ipv6=true",
@@ -187,7 +193,7 @@ namespace SamFirm.Utils
                     }
 
                     var waitTask = process.WaitForExitAsync();
-                    var completedTask = await Task.WhenAny(waitTask, Task.Delay(Aria2Timeout));
+                    var completedTask = await Task.WhenAny(waitTask, Task.Delay(Aria2DownloadTimeout));
                     if (completedTask != waitTask)
                     {
                         Console.WriteLine($"aria2c timed out downloading {fileName}, falling back to builtin downloader.");
