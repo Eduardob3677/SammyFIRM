@@ -8,7 +8,7 @@ A streaming downloader, decryptor and extractor of Samsung firmware.
 
 1. Download the executable from [Release](https://github.com/jesec/samfirm.net/releases).
 1. Run it with `--region` , `--model` and `--i` arguments.
-1. Add `--test` to pull firmware info from Samsung's test server (`version.test.xml`) when you need beta builds.
+1. Add `--test` to pull firmware info from Samsung's test server (`version.test.xml`) and decrypt the MD5 entries into usable firmware versions for beta builds.
 1. Region, Model and IMEI need to be valid for the target device, otherwise FUS will respond with Err 408
 1. If you dont have the IMEI of a certain device you want, usually googling <model> "imei swappa" will bring up valid ones
 

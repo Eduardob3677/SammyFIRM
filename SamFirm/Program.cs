@@ -4,7 +4,7 @@ using System.IO;
 using System.Linq;
 using System.Net.Http;
 using System.Text;
-using System.Text.Json;
+using System.Security.Cryptography;
 using System.Threading.Tasks;
 using System.Xml.Linq;
 using System.Xml.XPath;
@@ -30,34 +30,97 @@ namespace SamFirm
         }
 
         private static readonly HttpClient _httpClient = new HttpClient();
-        private const string TestFirmwareMapUrl = "https://raw.githubusercontent.com/Mai19930513/SamsungTestFirmwareVersionDecrypt/master/firmware.json";
+        private const string TestVersionUrlTemplate = "https://fota-cloud-dn.ospserver.net/firmware/{0}/{1}/version.test.xml";
+        private const string RegularVersionUrlTemplate = "http://fota-cloud-dn.ospserver.net/firmware/{0}/{1}/version.xml";
 
-        private static async Task<Dictionary<string, string>> GetTestFirmwareMap(string region, string model)
+        private static char NextChar(char c, string alphabet = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ")
         {
-            string mappingJson = await _httpClient.GetStringAsync(TestFirmwareMapUrl);
-            using JsonDocument document = JsonDocument.Parse(mappingJson);
-            if (!document.RootElement.TryGetProperty(model, out JsonElement modelElement)) return null;
-            if (!modelElement.TryGetProperty(region, out JsonElement regionElement)) return null;
-            if (!regionElement.TryGetProperty("版本号", out JsonElement versionsElement)) return null;
+            int idx = alphabet.IndexOf(c);
+            if (idx < 0 || idx + 1 >= alphabet.Length) return c;
+            return alphabet[idx + 1];
+        }
 
-            Dictionary<string, string> map = new Dictionary<string, string>();
-            foreach (JsonProperty property in versionsElement.EnumerateObject())
+        private static string ComputeMd5(string input)
+        {
+            using MD5 md5 = MD5.Create();
+            byte[] bytes = Encoding.UTF8.GetBytes(input);
+            byte[] hash = md5.ComputeHash(bytes);
+            StringBuilder sb = new StringBuilder();
+            foreach (byte b in hash) sb.Append(b.ToString("x2"));
+            return sb.ToString();
+        }
+
+        private static string TryDecryptTestVersion(
+            HashSet<string> md5Targets,
+            string[] latestParts)
+        {
+            if (latestParts.Length < 2 || md5Targets == null || md5Targets.Count == 0) return null;
+            string latestPda = latestParts[0] ?? string.Empty;
+            string latestCsc = latestParts[1] ?? string.Empty;
+            string latestCp = latestParts.Length > 2 ? latestParts[2] : string.Empty;
+
+            if (string.IsNullOrEmpty(latestPda) || string.IsNullOrEmpty(latestCsc)) return null;
+
+            string firstCode = latestPda.Length > 6 ? latestPda[..^6] : latestPda;   // e.g. S9280ZC
+            string secondCode = latestCsc.Length > 5 ? latestCsc[..^5] : latestCsc;  // e.g. S9280CH
+            string thirdCode = latestCp.Length > 6 ? latestCp[..^6] : string.Empty;
+
+            char startBl = latestPda.Length >= 5 ? latestPda[^5] : '0';
+            char updateChar = latestPda.Length >= 4 ? latestPda[^4] : 'A';
+            char yearChar = latestPda.Length >= 3 ? latestPda[^3] : 'A';
+
+            IEnumerable<char> months = "ABCDEFGHIJKL";
+            IEnumerable<char> serials = ("123456789" + "ABCDEFGHIJKLMNOPQRSTUVWXYZ").ToCharArray();
+
+            IEnumerable<char> bootloaders = new[] { startBl, NextChar(startBl) };
+            IEnumerable<char> updates = new[] { updateChar, NextChar(updateChar), 'Z' };
+            IEnumerable<char> years = new[] { yearChar, NextChar(yearChar) };
+
+            foreach (char i1 in new[] { 'U', 'S' })
             {
-                if (property.Value.ValueKind == JsonValueKind.String)
+                foreach (char bl in bootloaders)
                 {
-                    map[property.Name] = property.Value.GetString();
+                    foreach (char upd in updates)
+                    {
+                        foreach (char year in years)
+                        {
+                            foreach (char month in months)
+                            {
+                                foreach (char serial in serials)
+                                {
+                                    string randomVersion = $"{bl}{upd}{year}{month}{serial}";
+                                    string cpPart = string.IsNullOrEmpty(thirdCode) ? string.Empty : $"{thirdCode}{i1}{randomVersion}";
+                                    string candidate = $"{firstCode}{i1}{randomVersion}/{secondCode}{randomVersion}/{cpPart}";
+                                    string hash = ComputeMd5(candidate);
+                                    if (md5Targets.Contains(hash))
+                                    {
+                                        return candidate;
+                                    }
+                                }
+                            }
+                        }
+                    }
                 }
             }
-            return map;
+
+            return null;
         }
 
         private static async Task<string> GetLatestVersion(string region, string model, bool useTestServer)
         {
             string url = useTestServer
-                ? $"https://fota-cloud-dn.ospserver.net/firmware/{region}/{model}/version.test.xml"
-                : $"http://fota-cloud-dn.ospserver.net/firmware/{region}/{model}/version.xml";
+                ? string.Format(TestVersionUrlTemplate, region, model)
+                : string.Format(RegularVersionUrlTemplate, region, model);
 
-            string xmlString = await _httpClient.GetStringAsync(url);
+            string xmlString;
+            try
+            {
+                xmlString = await _httpClient.GetStringAsync(url);
+            }
+            catch (Exception ex)
+            {
+                throw new InvalidOperationException($"Failed to fetch version XML from {url}", ex);
+            }
             XDocument document = XDocument.Parse(xmlString);
 
             if (!useTestServer)
@@ -65,18 +128,23 @@ namespace SamFirm
                 return document.XPathSelectElement("./versioninfo/firmware/version/latest").Value;
             }
 
-            IEnumerable<string> md5Values = document.XPathSelectElements("//version/upgrade/value").Select(e => e.Value);
-            Dictionary<string, string> versionMap = await GetTestFirmwareMap(region, model);
-            if (versionMap != null)
+            HashSet<string> md5Values = document.XPathSelectElements("//version/upgrade/value").Select(e => e.Value).ToHashSet();
+            // get regular latest version info as seed
+            string[] latestParts = Array.Empty<string>();
+            try
             {
-                foreach (string md5 in md5Values)
-                {
-                    if (versionMap.TryGetValue(md5, out string mappedVersion))
-                    {
-                        return mappedVersion;
-                    }
-                }
+                string regularXml = await _httpClient.GetStringAsync(string.Format(RegularVersionUrlTemplate, region, model));
+                XDocument regularDoc = XDocument.Parse(regularXml);
+                string regularLatest = regularDoc.XPathSelectElement("./versioninfo/firmware/version/latest")?.Value;
+                latestParts = regularLatest?.Split('/') ?? Array.Empty<string>();
             }
+            catch (Exception)
+            {
+                // fallback to empty latestParts; will return null if we cannot resolve
+            }
+
+            string resolved = TryDecryptTestVersion(md5Values, latestParts);
+            if (resolved != null) return resolved;
 
             throw new InvalidOperationException("Unable to resolve test firmware version from version.test.xml");
         }
