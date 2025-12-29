@@ -31,6 +31,9 @@ namespace SamFirm.Utils
         public static string Nonce { get; set; } = string.Empty;
         public static string NonceDecrypted { get; set; } = string.Empty;
 
+        private const int Aria2Connections = 16;
+        private static readonly TimeSpan Aria2Timeout = TimeSpan.FromMinutes(5);
+
 
         private static readonly HttpClient _httpClient = new HttpClient();
 
@@ -120,8 +123,8 @@ namespace SamFirm.Utils
                 System.IO.File.WriteAllLines(configPath, new[]
                 {
                     "continue=true",
-                    "max-connection-per-server=16",
-                    "split=16",
+                    $"max-connection-per-server={Aria2Connections}",
+                    $"split={Aria2Connections}",
                     "min-split-size=1M",
                     "allow-overwrite=true",
                     "auto-file-renaming=false",
@@ -145,36 +148,44 @@ namespace SamFirm.Utils
                 psi.ArgumentList.Add($"--conf-path={configPath}");
                 psi.ArgumentList.Add(url);
 
-                using var process = Process.Start(psi);
-                if (process == null)
+                Process process = null;
+                try
                 {
-                    Console.WriteLine("aria2c failed to start. Ensure aria2c is installed and available in PATH.");
-                    return false;
-                }
-
-                var waitTask = process.WaitForExitAsync();
-                var completedTask = await Task.WhenAny(waitTask, Task.Delay(TimeSpan.FromMinutes(5)));
-                if (completedTask != waitTask)
-                {
-                    Console.WriteLine($"aria2c timed out downloading {fileName}, falling back to builtin downloader.");
-                    try
+                    process = Process.Start(psi);
+                    if (process == null)
                     {
-                        process.Kill();
+                        Console.WriteLine("aria2c failed to start. Ensure aria2c is installed and available in PATH.");
+                        return false;
                     }
-                    catch
+
+                    var waitTask = process.WaitForExitAsync();
+                    var completedTask = await Task.WhenAny(waitTask, Task.Delay(Aria2Timeout));
+                    if (completedTask != waitTask)
                     {
-                        // ignore kill errors
+                        Console.WriteLine($"aria2c timed out downloading {fileName}, falling back to builtin downloader.");
+                        try
+                        {
+                            process.Kill();
+                        }
+                        catch
+                        {
+                            // ignore kill errors
+                        }
+                        return false;
                     }
-                    return false;
-                }
 
-                if (process.ExitCode != 0)
+                    if (process.ExitCode != 0)
+                    {
+                        Console.WriteLine($"aria2c download failed with code {process.ExitCode} for {fileName}, falling back to builtin downloader.");
+                        return false;
+                    }
+
+                    return System.IO.File.Exists(outputPath);
+                }
+                finally
                 {
-                    Console.WriteLine($"aria2c download failed with code {process.ExitCode} for {fileName}, falling back to builtin downloader.");
-                    return false;
+                    process?.Dispose();
                 }
-
-                return System.IO.File.Exists(outputPath);
             }
             catch (Exception ex)
             {
