@@ -95,7 +95,12 @@ namespace SamFirm
                                 {
                                     string randomVersion = $"{bl}{upd}{year}{month}{serial}";
                                     string cpPart = string.IsNullOrEmpty(thirdCode) ? string.Empty : $"{thirdCode}{i1}{randomVersion}";
-                                    string candidate = $"{firstCode}{i1}{randomVersion}/{secondCode}{randomVersion}/{cpPart}";
+                                    
+                                    // Try with CP part if available, otherwise try without it
+                                    string candidate = string.IsNullOrEmpty(cpPart) 
+                                        ? $"{firstCode}{i1}{randomVersion}/{secondCode}{randomVersion}"
+                                        : $"{firstCode}{i1}{randomVersion}/{secondCode}{randomVersion}/{cpPart}";
+                                    
                                     string hash = ComputeMd5(candidate);
                                     if (md5Targets.Contains(hash))
                                     {
