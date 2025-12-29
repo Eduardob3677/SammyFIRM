@@ -105,6 +105,7 @@ namespace SamFirm.Utils
 
         private static async Task<bool> TryDownloadWithAria2c(string url, string outputPath)
         {
+            string configPath = string.Empty;
             try
             {
                 string dir = Path.GetDirectoryName(outputPath) ?? string.Empty;
@@ -112,6 +113,25 @@ namespace SamFirm.Utils
                 {
                     dir = Directory.GetCurrentDirectory();
                 }
+
+                string fileName = Path.GetFileName(outputPath);
+
+                configPath = Path.Combine(Path.GetTempPath(), $"aria2c_{Guid.NewGuid():N}.conf");
+                System.IO.File.WriteAllLines(configPath, new[]
+                {
+                    "continue=true",
+                    "max-connection-per-server=16",
+                    "split=16",
+                    "min-split-size=1M",
+                    "allow-overwrite=true",
+                    "auto-file-renaming=false",
+                    "disable-ipv6=true",
+                    "no-conf=true",
+                    $"dir={dir}",
+                    $"out={fileName}",
+                    "header=User-Agent: Kies2.0_FUS",
+                    $"header=Authorization: FUS nonce=\"{Nonce}\", signature=\"{Auth.GetAuthorization(NonceDecrypted)}\""
+                });
 
                 var psi = new ProcessStartInfo
                 {
@@ -122,30 +142,35 @@ namespace SamFirm.Utils
                     CreateNoWindow = true
                 };
 
-                psi.ArgumentList.Add("--continue=true");
-                psi.ArgumentList.Add("--max-connection-per-server=16");
-                psi.ArgumentList.Add("--split=16");
-                psi.ArgumentList.Add("--min-split-size=1M");
-                psi.ArgumentList.Add("--allow-overwrite=true");
-                psi.ArgumentList.Add("--auto-file-renaming=false");
-                psi.ArgumentList.Add("--disable-ipv6=true");
-                psi.ArgumentList.Add("--header=User-Agent: Kies2.0_FUS");
-                psi.ArgumentList.Add($"--header=Authorization: FUS nonce=\"{Nonce}\", signature=\"{Auth.GetAuthorization(NonceDecrypted)}\"");
-                psi.ArgumentList.Add($"--out={Path.GetFileName(outputPath)}");
-                psi.ArgumentList.Add($"--dir={dir}");
+                psi.ArgumentList.Add($"--conf-path={configPath}");
                 psi.ArgumentList.Add(url);
 
                 using var process = Process.Start(psi);
                 if (process == null)
                 {
+                    Console.WriteLine("aria2c failed to start. Ensure aria2c is installed and available in PATH.");
                     return false;
                 }
 
-                await process.WaitForExitAsync();
+                var waitTask = process.WaitForExitAsync();
+                var completedTask = await Task.WhenAny(waitTask, Task.Delay(TimeSpan.FromMinutes(5)));
+                if (completedTask != waitTask)
+                {
+                    Console.WriteLine($"aria2c timed out downloading {fileName}, falling back to builtin downloader.");
+                    try
+                    {
+                        process.Kill();
+                    }
+                    catch
+                    {
+                        // ignore kill errors
+                    }
+                    return false;
+                }
 
                 if (process.ExitCode != 0)
                 {
-                    Console.WriteLine($"aria2c download failed with code {process.ExitCode} for {url}, falling back to builtin downloader.");
+                    Console.WriteLine($"aria2c download failed with code {process.ExitCode} for {fileName}, falling back to builtin downloader.");
                     return false;
                 }
 
@@ -155,6 +180,20 @@ namespace SamFirm.Utils
             {
                 Console.WriteLine($"aria2c unavailable, falling back to builtin downloader: {ex.Message}");
                 return false;
+            }
+            finally
+            {
+                if (!string.IsNullOrEmpty(configPath) && System.IO.File.Exists(configPath))
+                {
+                    try
+                    {
+                        System.IO.File.Delete(configPath);
+                    }
+                    catch
+                    {
+                        // ignore cleanup failures
+                    }
+                }
             }
         }
 
