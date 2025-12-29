@@ -219,9 +219,15 @@ namespace SamFirm
             Console.WriteLine($"\nSending BinaryInform request...");
             Console.WriteLine($"  Model: {model}, Region: {region}");
             Console.WriteLine($"  Version: {version}");
+            Console.WriteLine($"  IMEI: {imei}");
             
-            int informStatus = Utils.FUSClient.DownloadBinaryInform(
-                Utils.Msg.GetBinaryInformMsg(version, region, model, imei, Utils.FUSClient.NonceDecrypted), out binaryInfoXMLString);
+            // Generate and display the XML message
+            string xmlMessage = Utils.Msg.GetBinaryInformMsg(version, region, model, imei, Utils.FUSClient.NonceDecrypted);
+            Console.WriteLine($"\n--- XML Request ---");
+            Console.WriteLine(xmlMessage);
+            Console.WriteLine($"--- End Request ---\n");
+            
+            int informStatus = Utils.FUSClient.DownloadBinaryInform(xmlMessage, out binaryInfoXMLString);
             
             Console.WriteLine($"  Response status: {informStatus}");
             
@@ -230,6 +236,10 @@ namespace SamFirm
                 Console.WriteLine($"Failed to fetch binary info (status {informStatus}).");
                 return;
             }
+
+            Console.WriteLine($"\n--- XML Response ---");
+            Console.WriteLine(binaryInfoXMLString);
+            Console.WriteLine($"--- End Response ---\n");
 
             XDocument binaryInfo = XDocument.Parse(binaryInfoXMLString);
             

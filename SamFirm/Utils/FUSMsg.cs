@@ -17,7 +17,7 @@ namespace SamFirm.Utils
                             new XElement("BINARY_NATURE",
                                 new XElement("Data", "1")),
                             new XElement("CLIENT_PRODUCT",
-                                new XElement("Data", "Smart Switch")),
+                                new XElement("Data", "Kies")),
                             new XElement("CLIENT_VERSION",
                                 new XElement("Data", "4.4.14")),
                             new XElement("DEVICE_IMEI_PUSH",
