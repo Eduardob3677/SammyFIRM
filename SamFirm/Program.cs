@@ -94,12 +94,14 @@ namespace SamFirm
                                 foreach (char serial in serials)
                                 {
                                     string randomVersion = $"{bl}{upd}{year}{month}{serial}";
+                                    string pdaPart = $"{firstCode}{i1}{randomVersion}";
+                                    string cscPart = $"{secondCode}{randomVersion}";
                                     string cpPart = string.IsNullOrEmpty(thirdCode) ? string.Empty : $"{thirdCode}{i1}{randomVersion}";
                                     
-                                    // Try with CP part if available, otherwise try without it
+                                    // Build version string: PDA/CSC or PDA/CSC/MODEM depending on availability
                                     string candidate = string.IsNullOrEmpty(cpPart) 
-                                        ? $"{firstCode}{i1}{randomVersion}/{secondCode}{randomVersion}"
-                                        : $"{firstCode}{i1}{randomVersion}/{secondCode}{randomVersion}/{cpPart}";
+                                        ? $"{pdaPart}/{cscPart}"
+                                        : $"{pdaPart}/{cscPart}/{cpPart}";
                                     
                                     string hash = ComputeMd5(candidate);
                                     if (md5Targets.Contains(hash))

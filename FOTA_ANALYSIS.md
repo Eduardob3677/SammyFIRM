@@ -52,8 +52,9 @@ For test servers, the code:
 ### 1. Version String Format
 **Issue**: When there's no modem (CP) part, the version string might have incorrect format.
 
-**Current behavior**: Creates `PDA/CSC/` (with trailing slash but empty modem)
-**Expected format**: Could be `PDA/CSC` or `PDA/CSC/PDA` (using PDA as modem fallback)
+**Previous behavior**: Created `PDA/CSC/` (with trailing slash but empty modem)
+**Fixed format**: Now creates `PDA/CSC` (without modem component when not available)
+**Note**: Samsung's version format is flexible - it can be `PDA/CSC` (two parts) or `PDA/CSC/MODEM` (three parts)
 
 ### 2. Test Server Access
 **Analysis**: The FOTA agent uses the same base URL for both test and production servers, only changing the XML filename (`version.xml` vs `version.test.xml`).
