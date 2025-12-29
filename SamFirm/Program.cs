@@ -32,6 +32,10 @@ namespace SamFirm
         private static readonly HttpClient _httpClient = new HttpClient();
         private const string TestVersionUrlTemplate = "https://fota-cloud-dn.ospserver.net/firmware/{0}/{1}/version.test.xml";
         private const string RegularVersionUrlTemplate = "http://fota-cloud-dn.ospserver.net/firmware/{0}/{1}/version.xml";
+        private const int PdaSuffixLength = 6;
+        private const int CscSuffixLength = 5;
+        private const string MonthChars = "ABCDEFGHIJKL";
+        private const string SerialAlphabet = "123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ";
 
         private static char NextChar(char c, string alphabet = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ")
         {
@@ -61,22 +65,23 @@ namespace SamFirm
 
             if (string.IsNullOrEmpty(latestPda) || string.IsNullOrEmpty(latestCsc)) return null;
 
-            string firstCode = latestPda.Length > 6 ? latestPda[..^6] : latestPda;   // e.g. S9280ZC
-            string secondCode = latestCsc.Length > 5 ? latestCsc[..^5] : latestCsc;  // e.g. S9280CH
-            string thirdCode = latestCp.Length > 6 ? latestCp[..^6] : string.Empty;
+            string firstCode = latestPda.Length > PdaSuffixLength ? latestPda[..^PdaSuffixLength] : latestPda;   // e.g. S9280ZC
+            string secondCode = latestCsc.Length > CscSuffixLength ? latestCsc[..^CscSuffixLength] : latestCsc;  // e.g. S9280CH
+            string thirdCode = latestCp.Length > PdaSuffixLength ? latestCp[..^PdaSuffixLength] : string.Empty;
 
             char startBl = latestPda.Length >= 5 ? latestPda[^5] : '0';
             char updateChar = latestPda.Length >= 4 ? latestPda[^4] : 'A';
             char yearChar = latestPda.Length >= 3 ? latestPda[^3] : 'A';
 
-            IEnumerable<char> months = "ABCDEFGHIJKL";
-            IEnumerable<char> serials = ("123456789" + "ABCDEFGHIJKLMNOPQRSTUVWXYZ").ToCharArray();
+            ReadOnlySpan<char> months = MonthChars;
+            ReadOnlySpan<char> serials = SerialAlphabet;
 
-            IEnumerable<char> bootloaders = new[] { startBl, NextChar(startBl) };
-            IEnumerable<char> updates = new[] { updateChar, NextChar(updateChar), 'Z' };
-            IEnumerable<char> years = new[] { yearChar, NextChar(yearChar) };
+            Span<char> bootloaders = stackalloc char[] { startBl, NextChar(startBl) };
+            Span<char> updates = stackalloc char[] { updateChar, NextChar(updateChar), 'Z' };
+            Span<char> years = stackalloc char[] { yearChar, NextChar(yearChar) };
 
-            foreach (char i1 in new[] { 'U', 'S' })
+            Span<char> prefixes = stackalloc char[] { 'U', 'S' };
+            foreach (char i1 in prefixes)
             {
                 foreach (char bl in bootloaders)
                 {
@@ -125,7 +130,9 @@ namespace SamFirm
 
             if (!useTestServer)
             {
-                return document.XPathSelectElement("./versioninfo/firmware/version/latest").Value;
+                XElement latestEl = document.XPathSelectElement("./versioninfo/firmware/version/latest");
+                if (latestEl == null) throw new InvalidOperationException("version.xml missing <latest> element");
+                return latestEl.Value;
             }
 
             HashSet<string> md5Values = document.XPathSelectElements("//version/upgrade/value").Select(e => e.Value).ToHashSet();
