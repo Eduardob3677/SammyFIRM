@@ -28,6 +28,9 @@ namespace SamFirm
 
             [Option('d', "decrypt", Required = false, HelpText = "Decrypt MD5-encoded test firmware versions")]
             public bool DecryptMD5 { get; set; }
+
+            [Option('v', "version", Required = false, HelpText = "Specific firmware version to download (e.g., S916BXXU8FYLJ/S916BOXM8FYLJ/S916BXXU8FYLJ)")]
+            public string SpecificVersion { get; set; }
         }
 
         private static readonly HttpClient _httpClient = new HttpClient();
@@ -41,11 +44,8 @@ namespace SamFirm
             
             if (latestElement == null || string.IsNullOrEmpty(latestElement.Value))
             {
-                if (useTestServer)
-                {
-                    throw new Exception("Test server has only MD5-encoded versions. Use --decrypt flag to decrypt them first.");
-                }
-                throw new Exception("No version information available.");
+                // Return null to signal that we need to decrypt
+                return null;
             }
             
             return latestElement.Value;
@@ -58,6 +58,7 @@ namespace SamFirm
             string imei = "";
             bool useTestServer = false;
             bool decryptMD5 = false;
+            string specificVersion = "";
             Parser.Default.ParseArguments<Options>(args)
             .WithParsed(o =>
             {
@@ -66,6 +67,7 @@ namespace SamFirm
                 imei = o.imei;
                 useTestServer = o.UseTestServer;
                 decryptMD5 = o.DecryptMD5;
+                specificVersion = o.SpecificVersion ?? "";
             });
 
             if (string.IsNullOrEmpty(model) || string.IsNullOrEmpty(region) || string.IsNullOrEmpty(imei)) return;
@@ -107,7 +109,9 @@ namespace SamFirm
                         Console.WriteLine($"║  Latest Test Firmware: {sortedVersions[0].Value}");
                         Console.WriteLine($"╚════════════════════════════════════════════════════════════════════╝");
                         
-                        Console.WriteLine("\n💡 To download a specific version, run without --decrypt flag");
+                        Console.WriteLine("\n💡 To download a specific version, run without --decrypt flag and add --version:");
+                        Console.WriteLine($"   Example: ./SamFirm -m {model} -r {region} -i {imei} --test --version \"{sortedVersions[0].Value}\"");
+                        Console.WriteLine("\n💡 Or simply use --test without --decrypt to auto-download the latest:");
                         Console.WriteLine($"   Example: ./SamFirm -m {model} -r {region} -i {imei} --test");
                     }
                     else
@@ -122,6 +126,41 @@ namespace SamFirm
                 }
 
                 string latestVersionStr = await GetLatestVersion(region, model, useTestServer);
+                
+                // If using test server and no readable version, auto-decrypt and get latest
+                if (useTestServer && latestVersionStr == null)
+                {
+                    if (!string.IsNullOrEmpty(specificVersion))
+                    {
+                        // User provided a specific version to download
+                        latestVersionStr = specificVersion;
+                        Console.WriteLine($"\n  Using specified version: {latestVersionStr}");
+                    }
+                    else
+                    {
+                        // Auto-decrypt to find the latest version
+                        Console.WriteLine("\n=== Auto-decrypting test firmware versions ===");
+                        string versionFile = "version.test.xml";
+                        string url = $"http://fota-cloud-dn.ospserver.net/firmware/{region}/{model}/{versionFile}";
+                        string xmlString = await _httpClient.GetStringAsync(url);
+                        
+                        var decryptedVersions = await Utils.MD5Decrypt.DecryptMD5VersionsAsync(xmlString, model, region);
+                        
+                        if (decryptedVersions.Count > 0)
+                        {
+                            var sortedVersions = decryptedVersions.OrderByDescending(x => x.Value).ToList();
+                            latestVersionStr = sortedVersions[0].Value;
+                            
+                            Console.WriteLine($"\n✅ Found latest test firmware: {latestVersionStr}");
+                            Console.WriteLine($"   Total versions available: {decryptedVersions.Count}");
+                            Console.WriteLine("\n🔽 Starting download...\n");
+                        }
+                        else
+                        {
+                            throw new Exception("Could not decrypt any test firmware versions. Try with --decrypt flag to see details.");
+                        }
+                    }
+                }
                 string[] versions = latestVersionStr.Split('/');
                 string versionPDA = versions[0];
                 string versionCSC = versions[1];
