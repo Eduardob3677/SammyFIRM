@@ -27,6 +27,9 @@ namespace SamFirm
 
             [Option('t', "test", Required = false, HelpText = "Use test firmware server (version.test.xml)")]
             public bool UseTestServer { get; set; }
+
+            [Option("use-oauth", Required = false, HelpText = "Use OAuth 1.0 authentication for test servers")]
+            public bool UseOAuth { get; set; }
         }
 
         private static readonly HttpClient _httpClient = new HttpClient();
@@ -169,6 +172,7 @@ namespace SamFirm
             string region = "";
             string imei = "";
             bool useTestServer = false;
+            bool useOAuth = false;
             Parser.Default.ParseArguments<Options>(args)
             .WithParsed(o =>
             {
@@ -176,12 +180,15 @@ namespace SamFirm
                 region = o.Region;
                 imei = o.imei;
                 useTestServer = o.UseTestServer;
+                useOAuth = o.UseOAuth;
             });
 
             if (string.IsNullOrEmpty(model) || string.IsNullOrEmpty(region) || string.IsNullOrEmpty(imei)) return;
 
             Console.OutputEncoding = Encoding.UTF8;
-            Console.WriteLine($"\n  Model: {model}\n  Region: {region}" + (useTestServer ? "\n  Using test firmware server" : string.Empty));
+            Console.WriteLine($"\n  Model: {model}\n  Region: {region}" + 
+                (useTestServer ? "\n  Using test firmware server" : string.Empty) +
+                (useOAuth ? "\n  Using OAuth 1.0 authentication" : string.Empty));
 
             string latestVersionStr;
             try
@@ -204,6 +211,7 @@ namespace SamFirm
             // Set model and region for OSP headers
             Utils.FUSClient.Model = model;
             Utils.FUSClient.Region = region;
+            Utils.FUSClient.UseOAuth = useOAuth;
             
             Utils.FUSClient.GenerateNonce();
 

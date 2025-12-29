@@ -28,8 +28,23 @@ namespace SamFirm.Utils
             HttpWebRequest request = (HttpWebRequest)WebRequest.Create(requestUriString);
             request.Headers["Cache-Control"] = "no-cache";
             request.UserAgent = "Kies2.0_FUS";
-            request.Headers.Add("Authorization",
-                                $"FUS nonce=\"{FUSClient.Nonce}\", signature=\"{(FUSClient.NonceDecrypted.Length > 0 ? Auth.GetAuthorization(FUSClient.NonceDecrypted) : "")}\", nc=\"\", type=\"\", realm=\"\", newauth=\"1\"");
+            
+            // Use OAuth if enabled, otherwise use FUS auth
+            if (FUSClient.UseOAuth)
+            {
+                // Generate OAuth 1.0 Authorization header
+                var uri = new Uri(requestUriString);
+                var oauthHeader = OAuthHelper.GenerateOAuthHeader("POST", requestUriString, uri.Query);
+                request.Headers.Add("Authorization", oauthHeader);
+                Console.WriteLine($"  Using OAuth 1.0 authentication");
+            }
+            else
+            {
+                // Use traditional FUS authentication
+                request.Headers.Add("Authorization",
+                    $"FUS nonce=\"{FUSClient.Nonce}\", signature=\"{(FUSClient.NonceDecrypted.Length > 0 ? Auth.GetAuthorization(FUSClient.NonceDecrypted) : "")}\", nc=\"\", type=\"\", realm=\"\", newauth=\"1\"");
+            }
+            
             // Add OSP-specific headers based on FOTA agent analysis
             request.Headers.Add("X-Sec-Dm-DeviceModel", model);
             request.Headers.Add("X-Sec-Dm-CustomerCode", region);
@@ -48,6 +63,7 @@ namespace SamFirm.Utils
         public static string NonceDecrypted { get; set; } = string.Empty;
         public static string Model { get; set; } = string.Empty;
         public static string Region { get; set; } = string.Empty;
+        public static bool UseOAuth { get; set; } = false;
 
 
         private static readonly HttpClient _httpClient = new HttpClient();
