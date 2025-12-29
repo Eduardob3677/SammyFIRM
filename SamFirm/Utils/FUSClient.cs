@@ -108,22 +108,27 @@ namespace SamFirm.Utils
                     dir = Directory.GetCurrentDirectory();
                 }
 
-                var args = new StringBuilder();
-                args.Append("--continue=true --max-connection-per-server=16 --split=16 --min-split-size=1M --allow-overwrite=true --auto-file-renaming=false ");
-                args.Append("--disable-ipv6=true ");
-                args.Append("--header=\"User-Agent: Kies2.0_FUS\" ");
-                args.Append($"--header=\"Authorization: FUS nonce=\\\"{Nonce}\\\", signature=\\\"{Auth.GetAuthorization(NonceDecrypted)}\\\"\" ");
-                args.Append($"--out=\"{Path.GetFileName(outputPath)}\" --dir=\"{dir}\" \"{url}\"");
-
                 var psi = new ProcessStartInfo
                 {
                     FileName = "aria2c",
-                    Arguments = args.ToString(),
                     RedirectStandardOutput = true,
                     RedirectStandardError = true,
                     UseShellExecute = false,
                     CreateNoWindow = true
                 };
+
+                psi.ArgumentList.Add("--continue=true");
+                psi.ArgumentList.Add("--max-connection-per-server=16");
+                psi.ArgumentList.Add("--split=16");
+                psi.ArgumentList.Add("--min-split-size=1M");
+                psi.ArgumentList.Add("--allow-overwrite=true");
+                psi.ArgumentList.Add("--auto-file-renaming=false");
+                psi.ArgumentList.Add("--disable-ipv6=true");
+                psi.ArgumentList.Add("--header=User-Agent: Kies2.0_FUS");
+                psi.ArgumentList.Add($"--header=Authorization: FUS nonce=\"{Nonce}\", signature=\"{Auth.GetAuthorization(NonceDecrypted)}\"");
+                psi.ArgumentList.Add($"--out={Path.GetFileName(outputPath)}");
+                psi.ArgumentList.Add($"--dir={dir}");
+                psi.ArgumentList.Add(url);
 
                 using var process = Process.Start(psi);
                 if (process == null)
