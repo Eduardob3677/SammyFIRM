@@ -190,15 +190,30 @@ namespace SamFirm
             Utils.FUSClient.GenerateNonce();
 
             string binaryInfoXMLString;
-            Utils.FUSClient.DownloadBinaryInform(
+            int informStatus = Utils.FUSClient.DownloadBinaryInform(
                 Utils.Msg.GetBinaryInformMsg(version, region, model, imei, Utils.FUSClient.NonceDecrypted), out binaryInfoXMLString);
+            if (informStatus != 200 || string.IsNullOrEmpty(binaryInfoXMLString))
+            {
+                Console.WriteLine($"Failed to fetch binary info (status {informStatus}).");
+                return;
+            }
 
             XDocument binaryInfo = XDocument.Parse(binaryInfoXMLString);
-            long binaryByteSize = long.Parse(binaryInfo.XPathSelectElement("./FUSMsg/FUSBody/Put/BINARY_BYTE_SIZE/Data").Value);
-            string binaryFilename = binaryInfo.XPathSelectElement("./FUSMsg/FUSBody/Put/BINARY_NAME/Data").Value;
-            string binaryLogicValue = binaryInfo.XPathSelectElement("./FUSMsg/FUSBody/Put/LOGIC_VALUE_FACTORY/Data").Value;
-            string binaryModelPath = binaryInfo.XPathSelectElement("./FUSMsg/FUSBody/Put/MODEL_PATH/Data").Value;
-            string binaryVersion = binaryInfo.XPathSelectElement("./FUSMsg/FUSBody/Results/LATEST_FW_VERSION/Data").Value;
+            XElement sizeEl = binaryInfo.XPathSelectElement("./FUSMsg/FUSBody/Put/BINARY_BYTE_SIZE/Data");
+            XElement nameEl = binaryInfo.XPathSelectElement("./FUSMsg/FUSBody/Put/BINARY_NAME/Data");
+            XElement logicEl = binaryInfo.XPathSelectElement("./FUSMsg/FUSBody/Put/LOGIC_VALUE_FACTORY/Data");
+            XElement pathEl = binaryInfo.XPathSelectElement("./FUSMsg/FUSBody/Put/MODEL_PATH/Data");
+            XElement versionEl = binaryInfo.XPathSelectElement("./FUSMsg/FUSBody/Results/LATEST_FW_VERSION/Data");
+            if (sizeEl == null || nameEl == null || logicEl == null || pathEl == null || versionEl == null)
+            {
+                Console.WriteLine("Binary info response missing required fields.");
+                return;
+            }
+            long binaryByteSize = long.Parse(sizeEl.Value);
+            string binaryFilename = nameEl.Value;
+            string binaryLogicValue = logicEl.Value;
+            string binaryModelPath = pathEl.Value;
+            string binaryVersion = versionEl.Value;
 
             Utils.FUSClient.DownloadBinaryInit(Utils.Msg.GetBinaryInitMsg(binaryFilename, Utils.FUSClient.NonceDecrypted), out _);
 
