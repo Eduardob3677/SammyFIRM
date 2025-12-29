@@ -50,7 +50,7 @@ namespace SamFirm.Utils
             string encryptedPath = Path.Combine(saveTo, $"{sanitizedFileName}.enc2");
 
             Console.WriteLine($"\nDownloading firmware: {sanitizedFileName}");
-            Console.WriteLine($"File size: {File.FileSize / (1024.0 * 1024.0):F2} MB");
+            Console.WriteLine($"File size: {File.FileSize / (1024.0 * 1024.0 * 1024.0):F2} GB");
 
             if (!await TryDownloadWithAria2c(url, encryptedPath))
             {
