@@ -1,5 +1,6 @@
 ﻿#pragma warning disable SYSLIB0014
 using System;
+using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Net;
@@ -38,19 +39,36 @@ namespace SamFirm.Utils
         {
             string url = "http://cloud-neofussvr.samsungmobile.com/NF_DownloadBinaryForMass.do?file=" + path + file;
 
-            var request = new HttpRequestMessage(HttpMethod.Get, url);
-            request.Headers.Add("User-Agent", "Kies2.0_FUS");
-            request.Headers.Add("Authorization", $"FUS nonce=\"{Nonce}\", signature=\"{Auth.GetAuthorization(NonceDecrypted)}\"");
+            Directory.CreateDirectory(saveTo);
+            string encryptedPath = Path.Combine(saveTo, $"{file}.enc2");
 
-
-            using (var response = await _httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead))
+            if (!await TryDownloadWithAria2c(url, encryptedPath))
             {
-                response.EnsureSuccessStatusCode();
-                using (var stream = await response.Content.ReadAsStreamAsync())
-                {
+                var request = new HttpRequestMessage(HttpMethod.Get, url);
+                request.Headers.Add("User-Agent", "Kies2.0_FUS");
+                request.Headers.Add("Authorization", $"FUS nonce=\"{Nonce}\", signature=\"{Auth.GetAuthorization(NonceDecrypted)}\"");
 
-                    File.HandleEncryptedFile(stream, saveTo);
+
+                using (var response = await _httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead))
+                {
+                    response.EnsureSuccessStatusCode();
+                    using (var stream = await response.Content.ReadAsStreamAsync())
+                    {
+
+                        File.HandleEncryptedFile(stream, saveTo);
+                    }
                 }
+                return;
+            }
+
+            using (var stream = System.IO.File.OpenRead(encryptedPath))
+            {
+                File.HandleEncryptedFile(stream, saveTo);
+            }
+
+            if (System.IO.File.Exists(encryptedPath))
+            {
+                System.IO.File.Delete(encryptedPath);
             }
         }
 
@@ -78,6 +96,56 @@ namespace SamFirm.Utils
         public static void SetReconnect()
         {
             // TODO: Not implemented.
+        }
+
+        private static async Task<bool> TryDownloadWithAria2c(string url, string outputPath)
+        {
+            try
+            {
+                string dir = Path.GetDirectoryName(outputPath);
+                if (string.IsNullOrEmpty(dir))
+                {
+                    dir = Directory.GetCurrentDirectory();
+                }
+
+                var args = new StringBuilder();
+                args.Append("--continue=true --max-connection-per-server=16 --split=16 --min-split-size=1M --allow-overwrite=true --auto-file-renaming=false ");
+                args.Append("--disable-ipv6=true ");
+                args.Append("--header=\"User-Agent: Kies2.0_FUS\" ");
+                args.Append($"--header=\"Authorization: FUS nonce=\\\"{Nonce}\\\", signature=\\\"{Auth.GetAuthorization(NonceDecrypted)}\\\"\" ");
+                args.Append($"--out=\"{Path.GetFileName(outputPath)}\" --dir=\"{dir}\" \"{url}\"");
+
+                var psi = new ProcessStartInfo
+                {
+                    FileName = "aria2c",
+                    Arguments = args.ToString(),
+                    RedirectStandardOutput = true,
+                    RedirectStandardError = true,
+                    UseShellExecute = false,
+                    CreateNoWindow = true
+                };
+
+                using var process = Process.Start(psi);
+                if (process == null)
+                {
+                    return false;
+                }
+
+                await process.WaitForExitAsync();
+
+                if (process.ExitCode != 0)
+                {
+                    Console.WriteLine($"aria2c download failed with code {process.ExitCode}, falling back to builtin downloader.");
+                    return false;
+                }
+
+                return System.IO.File.Exists(outputPath);
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"aria2c unavailable, falling back to builtin downloader: {ex.Message}");
+                return false;
+            }
         }
 
         private static int XMLFUSRequest(string URL, string xml, out string xmlresponse)
