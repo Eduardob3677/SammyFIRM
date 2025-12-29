@@ -47,13 +47,16 @@ namespace SamFirm.Utils
                     try
                     {
                         string prodUrl = $"http://fota-cloud-dn.ospserver.net/firmware/{region}/{model}/version.xml";
-                        string prodXmlString = await new HttpClient().GetStringAsync(prodUrl);
-                        XDocument prodDoc = XDocument.Parse(prodXmlString);
-                        latestVer = prodDoc.XPathSelectElement("./versioninfo/firmware/version/latest")?.Value ?? "";
-                        
-                        if (!string.IsNullOrEmpty(latestVer))
+                        using (HttpClient client = new HttpClient())
                         {
-                            Console.WriteLine($"Found production version: {latestVer}");
+                            string prodXmlString = await client.GetStringAsync(prodUrl);
+                            XDocument prodDoc = XDocument.Parse(prodXmlString);
+                            latestVer = prodDoc.XPathSelectElement("./versioninfo/firmware/version/latest")?.Value ?? "";
+                            
+                            if (!string.IsNullOrEmpty(latestVer))
+                            {
+                                Console.WriteLine($"Found production version: {latestVer}");
+                            }
                         }
                     }
                     catch

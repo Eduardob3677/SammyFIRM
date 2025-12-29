@@ -29,7 +29,7 @@ namespace SamFirm
             [Option('d', "decrypt", Required = false, HelpText = "Decrypt MD5-encoded test firmware versions")]
             public bool DecryptMD5 { get; set; }
 
-            [Option('v', "version", Required = false, HelpText = "Specific firmware version to download (e.g., S916BXXU8FYLJ/S916BOXM8FYLJ/S916BXXU8FYLJ)")]
+            [Option('f', "firmware", Required = false, HelpText = "Specific firmware version to download (e.g., S916BXXU8FYLJ/S916BOXM8FYLJ/S916BXXU8FYLJ)")]
             public string SpecificVersion { get; set; }
         }
 
@@ -109,8 +109,8 @@ namespace SamFirm
                         Console.WriteLine($"║  Latest Test Firmware: {sortedVersions[0].Value}");
                         Console.WriteLine($"╚════════════════════════════════════════════════════════════════════╝");
                         
-                        Console.WriteLine("\n💡 To download a specific version, run without --decrypt flag and add --version:");
-                        Console.WriteLine($"   Example: ./SamFirm -m {model} -r {region} -i {imei} --test --version \"{sortedVersions[0].Value}\"");
+                        Console.WriteLine($"\n💡 To download a specific version, run without --decrypt flag and add --firmware:");
+                        Console.WriteLine($"   Example: ./SamFirm -m {model} -r {region} -i {imei} --test --firmware \"{sortedVersions[0].Value}\"");
                         Console.WriteLine("\n💡 Or simply use --test without --decrypt to auto-download the latest:");
                         Console.WriteLine($"   Example: ./SamFirm -m {model} -r {region} -i {imei} --test");
                     }
@@ -161,7 +161,13 @@ namespace SamFirm
                         }
                     }
                 }
+                
                 string[] versions = latestVersionStr.Split('/');
+                if (versions.Length < 3)
+                {
+                    throw new Exception($"Invalid version format: {latestVersionStr}. Expected format: PDA/CSC/MODEM");
+                }
+                
                 string versionPDA = versions[0];
                 string versionCSC = versions[1];
                 string versionMODEM = versions[2];
