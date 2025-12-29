@@ -48,7 +48,6 @@ namespace SamFirm.Utils
                 aes.Padding = PaddingMode.PKCS7;
                 aes.Key = KEY;
 
-                // Use optimized buffer for better throughput during decryption
                 using (ICryptoTransform decryptor = aes.CreateDecryptor())
                 using (CryptoStream cryptoStream = new CryptoStream(networkStream, decryptor, CryptoStreamMode.Read))
                 {
