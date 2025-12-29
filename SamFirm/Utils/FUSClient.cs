@@ -119,8 +119,7 @@ namespace SamFirm.Utils
 
                 string fileName = Path.GetFileName(outputPath);
 
-                configPath = Path.Combine(Path.GetTempPath(), $"aria2c_{Guid.NewGuid():N}.conf");
-                System.IO.File.WriteAllLines(configPath, new[]
+                var configLines = new[]
                 {
                     "continue=true",
                     $"max-connection-per-server={Aria2Connections}",
@@ -134,7 +133,19 @@ namespace SamFirm.Utils
                     $"out={fileName}",
                     "header=User-Agent: Kies2.0_FUS",
                     $"header=Authorization: FUS nonce=\"{Nonce}\", signature=\"{Auth.GetAuthorization(NonceDecrypted)}\""
-                });
+                };
+
+                configPath = Path.Combine(dir, $".aria2_{Guid.NewGuid():N}.conf");
+                using (var configStream = new FileStream(configPath, FileMode.Create, FileAccess.Write, FileShare.None))
+                using (var writer = new StreamWriter(configStream, Encoding.UTF8))
+                {
+                    foreach (var line in configLines)
+                    {
+                        writer.WriteLine(line);
+                    }
+                }
+
+                System.IO.File.SetAttributes(configPath, FileAttributes.Hidden | FileAttributes.Temporary);
 
                 var psi = new ProcessStartInfo
                 {
