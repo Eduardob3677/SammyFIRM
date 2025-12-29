@@ -32,10 +32,13 @@ namespace SamFirm.Utils
         public static string NonceDecrypted { get; set; } = string.Empty;
 
         private const int Aria2Connections = 16;
-        private static readonly TimeSpan Aria2Timeout = TimeSpan.FromMinutes(5);
+        private static readonly TimeSpan Aria2Timeout = TimeSpan.FromMinutes(30);
 
 
-        private static readonly HttpClient _httpClient = new HttpClient();
+        private static readonly HttpClient _httpClient = new HttpClient
+        {
+            Timeout = TimeSpan.FromMinutes(30)
+        };
 
 
         public static async Task DownloadBinary(string path, string file, string saveTo)
@@ -46,8 +49,12 @@ namespace SamFirm.Utils
             string sanitizedFileName = Path.GetFileName(file);
             string encryptedPath = Path.Combine(saveTo, $"{sanitizedFileName}.enc2");
 
+            Console.WriteLine($"\nDownloading firmware: {sanitizedFileName}");
+            Console.WriteLine($"File size: {File.FileSize / (1024.0 * 1024.0):F2} MB");
+
             if (!await TryDownloadWithAria2c(url, encryptedPath))
             {
+                Console.WriteLine("Using built-in downloader (streaming mode)...");
                 var request = new HttpRequestMessage(HttpMethod.Get, url);
                 request.Headers.Add("User-Agent", "Kies2.0_FUS");
                 request.Headers.Add("Authorization", $"FUS nonce=\"{Nonce}\", signature=\"{Auth.GetAuthorization(NonceDecrypted)}\"");
@@ -58,19 +65,22 @@ namespace SamFirm.Utils
                     response.EnsureSuccessStatusCode();
                     using (var stream = await response.Content.ReadAsStreamAsync())
                     {
-
+                        Console.WriteLine("Decrypting and extracting firmware...");
                         File.HandleEncryptedFile(stream, saveTo);
                     }
                 }
+                Console.WriteLine("\n✓ Download, decryption, and extraction complete!");
                 return;
             }
 
+            Console.WriteLine("✓ Download complete, now decrypting and extracting...");
             try
             {
                 using (var stream = System.IO.File.OpenRead(encryptedPath))
                 {
                     File.HandleEncryptedFile(stream, saveTo);
                 }
+                Console.WriteLine("\n✓ Decryption and extraction complete!");
             }
             finally
             {
@@ -126,10 +136,17 @@ namespace SamFirm.Utils
                     $"max-connection-per-server={Aria2Connections}",
                     $"split={Aria2Connections}",
                     "min-split-size=1M",
+                    "max-download-limit=0",
+                    "max-tries=5",
+                    "retry-wait=3",
+                    "timeout=60",
+                    "connect-timeout=30",
                     "allow-overwrite=true",
                     "auto-file-renaming=false",
                     "disable-ipv6=true",
                     "no-conf=true",
+                    "file-allocation=none",
+                    "console-log-level=warn",
                     $"dir={dir}",
                     $"out={fileName}",
                     "header=User-Agent: Kies2.0_FUS",
