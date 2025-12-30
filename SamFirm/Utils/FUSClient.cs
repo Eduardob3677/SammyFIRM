@@ -46,7 +46,7 @@ namespace SamFirm.Utils
         };
 
 
-        public static async Task DownloadBinary(string path, string file, string saveTo)
+        public static async Task DownloadBinary(string path, string file, string saveTo, string[] components = null)
         {
             string url = "http://cloud-neofussvr.samsungmobile.com/NF_DownloadBinaryForMass.do?file=" + path + file;
 
@@ -58,7 +58,7 @@ namespace SamFirm.Utils
             Logger.Info($"File size: {File.FileSize / (1024.0 * 1024.0 * 1024.0):F2} GB");
 
             // Try streaming mode first (minimizes disk usage - no encrypted file stored)
-            bool streamingSuccess = await TryStreamingDownload(url, saveTo);
+            bool streamingSuccess = await TryStreamingDownload(url, saveTo, components);
             if (streamingSuccess)
             {
                 return;
@@ -77,7 +77,7 @@ namespace SamFirm.Utils
             {
                 using (var stream = System.IO.File.OpenRead(encryptedPath))
                 {
-                    File.HandleEncryptedFile(stream, saveTo);
+                    File.HandleEncryptedFile(stream, saveTo, components);
                 }
                 Logger.Done("Decryption and extraction complete!");
             }
@@ -92,7 +92,7 @@ namespace SamFirm.Utils
             }
         }
 
-        private static async Task<bool> TryStreamingDownload(string url, string saveTo)
+        private static async Task<bool> TryStreamingDownload(string url, string saveTo, string[] components = null)
         {
             try
             {
@@ -107,7 +107,7 @@ namespace SamFirm.Utils
                     using (var stream = await response.Content.ReadAsStreamAsync())
                     {
                         Logger.Info("Decrypting and extracting firmware...");
-                        File.HandleEncryptedFile(stream, saveTo);
+                        File.HandleEncryptedFile(stream, saveTo, components);
                     }
                 }
                 Logger.Done("Download, decryption, and extraction complete!");

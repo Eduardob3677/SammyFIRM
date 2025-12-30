@@ -22,6 +22,21 @@ namespace SamFirm
 
             [Option('i', "imei", Required = true)]
             public string imei { get; set; }
+
+            [Option("ap", Required = false, HelpText = "Download only AP (Application Processor) file")]
+            public bool DownloadAP { get; set; }
+
+            [Option("bl", Required = false, HelpText = "Download only BL (Bootloader) file")]
+            public bool DownloadBL { get; set; }
+
+            [Option("cp", Required = false, HelpText = "Download only CP (Modem/Radio) file")]
+            public bool DownloadCP { get; set; }
+
+            [Option("csc", Required = false, HelpText = "Download only CSC (Consumer Software Customization) file")]
+            public bool DownloadCSC { get; set; }
+
+            [Option("home-csc", Required = false, HelpText = "Download only HOME_CSC file")]
+            public bool DownloadHomeCSC { get; set; }
         }
 
         private static readonly HttpClient _httpClient = new HttpClient();
@@ -39,12 +54,27 @@ namespace SamFirm
             string model = "";
             string region = "";
             string imei = "";
+            string[] components = null;
             Parser.Default.ParseArguments<Options>(args)
             .WithParsed(o =>
             {
                 model = o.Model;
                 region = o.Region;
                 imei = o.imei;
+
+                // Build component filter based on options
+                var selectedComponents = new System.Collections.Generic.List<string>();
+                if (o.DownloadAP) selectedComponents.Add("AP");
+                if (o.DownloadBL) selectedComponents.Add("BL");
+                if (o.DownloadCP) selectedComponents.Add("CP");
+                if (o.DownloadCSC) selectedComponents.Add("CSC");
+                if (o.DownloadHomeCSC) selectedComponents.Add("HOME_CSC");
+
+                // If no specific components selected, download all
+                if (selectedComponents.Count > 0)
+                {
+                    components = selectedComponents.ToArray();
+                }
             });
 
             if (string.IsNullOrEmpty(model) || string.IsNullOrEmpty(region) || string.IsNullOrEmpty(imei)) return;
@@ -86,9 +116,18 @@ namespace SamFirm
             string savePath = Path.GetFullPath($"./{model}_{region}");
             Logger.Raw($"  Save path: {savePath}");
 
+            if (components != null && components.Length > 0)
+            {
+                Logger.Info($"Selected components: {string.Join(", ", components)}");
+            }
+            else
+            {
+                Logger.Info("Downloading all components");
+            }
+
             try
             {
-                await FUSClient.DownloadBinary(binaryModelPath, binaryFilename, savePath);
+                await FUSClient.DownloadBinary(binaryModelPath, binaryFilename, savePath, components);
             }
             catch (IOException ex) when (ex.Message.Contains("No space left on device"))
             {
