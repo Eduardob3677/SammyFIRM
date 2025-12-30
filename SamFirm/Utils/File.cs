@@ -58,6 +58,24 @@ namespace SamFirm.Utils
         private const int ExtractBufferSize = 4 * 1024 * 1024;
 
         /// <summary>
+        /// Check if an IOException is due to insufficient disk space (cross-platform)
+        /// </summary>
+        private static bool IsDiskFullException(IOException ex)
+        {
+            // Check for Linux/Unix message
+            if (ex.Message.Contains("No space left on device")) return true;
+            
+            // Check for Windows message
+            if (ex.Message.Contains("not enough space", StringComparison.OrdinalIgnoreCase)) return true;
+            if (ex.Message.Contains("disk is full", StringComparison.OrdinalIgnoreCase)) return true;
+            
+            // Check for Windows error code: 0x80070070 = ERROR_DISK_FULL
+            if (ex.HResult == unchecked((int)0x80070070)) return true;
+            
+            return false;
+        }
+
+        /// <summary>
         /// Extract TAR archive directly from a stream (optimized - no intermediate disk write)
         /// </summary>
         private static void ExtractTarFromStream(Stream tarStream, string outputDir, string tarFileName)
@@ -99,7 +117,7 @@ namespace SamFirm.Utils
                             StreamUtils.Copy(tarInputStream, outputStream, buffer);
                         }
                     }
-                    catch (IOException ex) when (ex.Message.Contains("No space left on device"))
+                    catch (IOException ex) when (IsDiskFullException(ex))
                     {
                         // Clean up partial file on disk space error
                         try
@@ -152,7 +170,7 @@ namespace SamFirm.Utils
                             StreamUtils.Copy(tarInputStream, outputStream, buffer);
                         }
                     }
-                    catch (IOException ex) when (ex.Message.Contains("No space left on device"))
+                    catch (IOException ex) when (IsDiskFullException(ex))
                     {
                         // Clean up partial file on disk space error
                         try
@@ -259,7 +277,7 @@ namespace SamFirm.Utils
                                 StreamUtils.Copy(zipInputStream, streamWriter, buffer);
                             }
                         }
-                        catch (IOException ex) when (ex.Message.Contains("No space left on device"))
+                        catch (IOException ex) when (IsDiskFullException(ex))
                         {
                             // Clean up partial file on disk space error
                             try
