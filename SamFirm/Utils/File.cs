@@ -12,8 +12,8 @@ namespace SamFirm.Utils
         public static long FileSize { get; set; } = 0;
         private static byte[] KEY;
 
-        // Buffer size for extraction (64KB is efficient and memory-friendly)
-        private const int ExtractBufferSize = 64 * 1024;
+        // Buffer size for extraction (1MB)
+        private const int ExtractBufferSize = 1024 * 1024;
 
         public static void UnzipFromStream(Stream zipStream, string outFolder)
         {
