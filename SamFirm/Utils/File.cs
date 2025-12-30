@@ -1,5 +1,6 @@
 ﻿using ICSharpCode.SharpZipLib.Core;
 using ICSharpCode.SharpZipLib.Zip;
+using ICSharpCode.SharpZipLib.Tar;
 using System;
 using System.IO;
 using System.Security.Cryptography;
@@ -14,6 +15,59 @@ namespace SamFirm.Utils
 
         // Buffer size for extraction (1MB)
         private const int ExtractBufferSize = 1024 * 1024;
+
+        private static void ExtractTarFile(string tarPath, string outputDir)
+        {
+            Logger.Info($"Extracting TAR archive: {Path.GetFileName(tarPath)}");
+            
+            using (var fileStream = System.IO.File.OpenRead(tarPath))
+            using (var tarInputStream = new TarInputStream(fileStream, System.Text.Encoding.UTF8))
+            {
+                var buffer = new byte[ExtractBufferSize];
+                TarEntry tarEntry;
+
+                while ((tarEntry = tarInputStream.GetNextEntry()) != null)
+                {
+                    if (tarEntry.IsDirectory) continue;
+
+                    var entryFileName = tarEntry.Name;
+                    var fullOutputPath = Path.Combine(outputDir, entryFileName);
+                    var directoryName = Path.GetDirectoryName(fullOutputPath);
+                    
+                    if (!string.IsNullOrEmpty(directoryName))
+                    {
+                        Directory.CreateDirectory(directoryName);
+                    }
+
+                    Logger.Raw($"    Extracting from TAR: {entryFileName} ({tarEntry.Size / (1024.0 * 1024.0):F2} MB)");
+
+                    try
+                    {
+                        using (var outputStream = System.IO.File.Create(fullOutputPath))
+                        {
+                            StreamUtils.Copy(tarInputStream, outputStream, buffer);
+                        }
+                    }
+                    catch (IOException ex) when (ex.Message.Contains("No space left on device"))
+                    {
+                        // Clean up partial file on disk space error
+                        try
+                        {
+                            if (System.IO.File.Exists(fullOutputPath))
+                            {
+                                System.IO.File.Delete(fullOutputPath);
+                            }
+                        }
+                        catch { /* Ignore cleanup errors */ }
+
+                        Logger.ErrorExit($"No space left on device: '{fullOutputPath}'", 1);
+                        throw;
+                    }
+                }
+            }
+
+            Logger.Info($"TAR extraction complete, deleting TAR file to save space...");
+        }
 
         public static void UnzipFromStream(Stream zipStream, string outFolder, string[] components = null)
         {
@@ -62,6 +116,27 @@ namespace SamFirm.Utils
                         using (FileStream streamWriter = System.IO.File.Create(fullZipToPath))
                         {
                             StreamUtils.Copy(zipInputStream, streamWriter, buffer);
+                        }
+
+                        // If this is a TAR or TAR.md5 file, extract its contents immediately and delete it to save space
+                        bool isTarFile = fullZipToPath.EndsWith(".tar", StringComparison.OrdinalIgnoreCase) || 
+                                         fullZipToPath.EndsWith(".tar.md5", StringComparison.OrdinalIgnoreCase);
+                        
+                        if (isTarFile)
+                        {
+                            try
+                            {
+                                ExtractTarFile(fullZipToPath, outFolder);
+                                
+                                // Delete the TAR file to save space
+                                System.IO.File.Delete(fullZipToPath);
+                                Logger.Info($"Deleted TAR file to save disk space: {zipEntry.Name}");
+                            }
+                            catch (Exception ex)
+                            {
+                                Logger.Warn($"Failed to extract or delete TAR file {zipEntry.Name}: {ex.Message}");
+                                // Continue with next file even if TAR extraction fails
+                            }
                         }
                     }
                     catch (IOException ex) when (ex.Message.Contains("No space left on device"))
