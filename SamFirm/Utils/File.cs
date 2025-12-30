@@ -26,16 +26,24 @@ namespace SamFirm.Utils
                     if (zipEntry.IsDirectory) continue;
 
                     fileCount++;
-                    Console.WriteLine($"  Extracting: {zipEntry.Name} ({zipEntry.Size / (1024.0 * 1024.0):F2} MB)");
+                    Logger.Raw($"  Extracting: {zipEntry.Name} ({zipEntry.Size / (1024.0 * 1024.0):F2} MB)");
 
                     var buffer = new byte[4 * 1024 * 1024]; // 4MB buffer for faster extraction
 
-                    using (FileStream streamWriter = System.IO.File.Create(fullZipToPath))
+                    try
                     {
-                        StreamUtils.Copy(zipInputStream, streamWriter, buffer);
+                        using (FileStream streamWriter = System.IO.File.Create(fullZipToPath))
+                        {
+                            StreamUtils.Copy(zipInputStream, streamWriter, buffer);
+                        }
+                    }
+                    catch (IOException ex) when (ex.Message.Contains("No space left on device"))
+                    {
+                        Logger.ErrorExit($"No space left on device: '{fullZipToPath}'", 1);
+                        throw;
                     }
                 }
-                Console.WriteLine($"  Total files extracted: {fileCount}");
+                Logger.Raw($"  Total files extracted: {fileCount}");
             }
         }
 

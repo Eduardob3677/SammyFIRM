@@ -55,12 +55,12 @@ namespace SamFirm.Utils
             string sanitizedFileName = Path.GetFileName(file);
             string encryptedPath = Path.Combine(saveTo, $"{sanitizedFileName}.enc2");
 
-            Console.WriteLine($"\nDownloading firmware: {sanitizedFileName}");
-            Console.WriteLine($"File size: {File.FileSize / (1024.0 * 1024.0 * 1024.0):F2} GB");
+            Logger.Info($"Downloading firmware: {sanitizedFileName}");
+            Logger.Info($"File size: {File.FileSize / (1024.0 * 1024.0 * 1024.0):F2} GB");
 
             if (!await TryDownloadWithAria2c(url, encryptedPath))
             {
-                Console.WriteLine("Using built-in downloader (streaming mode)...");
+                Logger.Info("Using built-in downloader (streaming mode)...");
                 var request = new HttpRequestMessage(HttpMethod.Get, url);
                 request.Headers.Add("User-Agent", "Kies2.0_FUS");
                 request.Headers.Add("Authorization", $"FUS nonce=\"{Nonce}\", signature=\"{Auth.GetAuthorization(NonceDecrypted)}\"");
@@ -71,22 +71,22 @@ namespace SamFirm.Utils
                     response.EnsureSuccessStatusCode();
                     using (var stream = await response.Content.ReadAsStreamAsync())
                     {
-                        Console.WriteLine("Decrypting and extracting firmware...");
+                        Logger.Info("Decrypting and extracting firmware...");
                         File.HandleEncryptedFile(stream, saveTo);
                     }
                 }
-                Console.WriteLine("\n✓ Download, decryption, and extraction complete!");
+                Logger.Done("Download, decryption, and extraction complete!");
                 return;
             }
 
-            Console.WriteLine("✓ Download complete, now decrypting and extracting...");
+            Logger.Done("Download complete, now decrypting and extracting...");
             try
             {
                 using (var stream = System.IO.File.OpenRead(encryptedPath))
                 {
                     File.HandleEncryptedFile(stream, saveTo);
                 }
-                Console.WriteLine("\n✓ Decryption and extraction complete!");
+                Logger.Done("Decryption and extraction complete!");
             }
             finally
             {
@@ -188,7 +188,7 @@ namespace SamFirm.Utils
                     process = Process.Start(psi);
                     if (process == null)
                     {
-                        Console.WriteLine("aria2c failed to start. Ensure aria2c is installed and available in PATH.");
+                        Logger.Warn("aria2c failed to start. Ensure aria2c is installed and available in PATH.");
                         return false;
                     }
 
@@ -196,7 +196,7 @@ namespace SamFirm.Utils
                     var completedTask = await Task.WhenAny(waitTask, Task.Delay(Aria2DownloadTimeout));
                     if (completedTask != waitTask)
                     {
-                        Console.WriteLine($"aria2c timed out downloading {fileName}, falling back to builtin downloader.");
+                        Logger.Warn($"aria2c timed out downloading {fileName}, falling back to builtin downloader.");
                         try
                         {
                             process.Kill();
@@ -214,7 +214,7 @@ namespace SamFirm.Utils
 
                     if (process.ExitCode != 0)
                     {
-                        Console.WriteLine($"aria2c download failed with code {process.ExitCode} for {fileName}, falling back to builtin downloader.");
+                        Logger.Warn($"aria2c download failed with code {process.ExitCode} for {fileName}, falling back to builtin downloader.");
                         return false;
                     }
 
@@ -228,7 +228,7 @@ namespace SamFirm.Utils
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"aria2c unavailable, falling back to builtin downloader: {ex.Message}");
+                Logger.Debug($"aria2c unavailable, falling back to builtin downloader: {ex.Message}");
                 return false;
             }
             finally
@@ -298,7 +298,7 @@ namespace SamFirm.Utils
             }
             catch (WebException exception)
             {
-                Console.WriteLine("Error GetResponseFUS() -> " + exception.ToString());
+                Logger.Error($"GetResponseFUS() -> {exception.Message}");
                 if (exception.Status == WebExceptionStatus.NameResolutionFailure)
                 {
                     SetReconnect();
