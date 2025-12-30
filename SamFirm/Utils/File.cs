@@ -85,6 +85,13 @@ namespace SamFirm.Utils
                     Logger.Raw($"  Total files skipped: {skippedCount}");
                 }
                 Logger.Raw($"  Total files extracted: {fileCount}");
+
+                // Warn if component filter was specified but no files were extracted
+                if (components != null && components.Length > 0 && fileCount == 0)
+                {
+                    Logger.Warn($"No files matched the selected components: {string.Join(", ", components)}");
+                    Logger.Warn("Firmware files should start with one of: AP_, BL_, CP_, CSC_, HOME_CSC_");
+                }
             }
         }
 
