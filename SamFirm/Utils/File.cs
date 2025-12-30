@@ -12,11 +12,17 @@ namespace SamFirm.Utils
         public static long FileSize { get; set; } = 0;
         private static byte[] KEY;
 
+        // Buffer size for extraction (64KB is efficient and memory-friendly)
+        private const int ExtractBufferSize = 64 * 1024;
+
         public static void UnzipFromStream(Stream zipStream, string outFolder)
         {
             using (var zipInputStream = new ZipInputStream(zipStream))
             {
                 int fileCount = 0;
+                // Reuse buffer across all file extractions to reduce memory allocations
+                var buffer = new byte[ExtractBufferSize];
+
                 while (zipInputStream.GetNextEntry() is ZipEntry zipEntry)
                 {
                     var fullZipToPath = Path.Combine(outFolder, zipEntry.Name);
@@ -28,8 +34,6 @@ namespace SamFirm.Utils
                     fileCount++;
                     Logger.Raw($"  Extracting: {zipEntry.Name} ({zipEntry.Size / (1024.0 * 1024.0):F2} MB)");
 
-                    var buffer = new byte[4 * 1024 * 1024]; // 4MB buffer for faster extraction
-
                     try
                     {
                         using (FileStream streamWriter = System.IO.File.Create(fullZipToPath))
@@ -39,6 +43,16 @@ namespace SamFirm.Utils
                     }
                     catch (IOException ex) when (ex.Message.Contains("No space left on device"))
                     {
+                        // Clean up partial file on disk space error
+                        try
+                        {
+                            if (System.IO.File.Exists(fullZipToPath))
+                            {
+                                System.IO.File.Delete(fullZipToPath);
+                            }
+                        }
+                        catch { /* Ignore cleanup errors */ }
+
                         Logger.ErrorExit($"No space left on device: '{fullZipToPath}'", 1);
                         throw;
                     }
@@ -49,7 +63,6 @@ namespace SamFirm.Utils
 
         public static void HandleEncryptedFile(Stream networkStream, string outputDir)
         {
-
             using (Aes aes = Aes.Create())
             {
                 aes.Mode = CipherMode.ECB;

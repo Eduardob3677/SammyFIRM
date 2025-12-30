@@ -4,8 +4,8 @@ using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Net;
-using System.Net.Http; // Required for HttpClient
-using System.Threading.Tasks; // Required for Task
+using System.Net.Http;
+using System.Threading.Tasks;
 using System.Text;
 using System.Text.RegularExpressions;
 
@@ -31,19 +31,9 @@ namespace SamFirm.Utils
         public static string Nonce { get; set; } = string.Empty;
         public static string NonceDecrypted { get; set; } = string.Empty;
 
-        private const int Aria2Connections = 16;
-        private static readonly TimeSpan Aria2DownloadTimeout = TimeSpan.FromMinutes(30);
-        
-        // Aria2c download configuration constants
-        private const int Aria2MaxTries = 5;
-        private const int Aria2RetryWait = 3;
-        private const int Aria2TimeoutSeconds = 60;
-        private const int Aria2ConnectTimeoutSeconds = 30;
-
-
         private static readonly HttpClient _httpClient = new HttpClient
         {
-            Timeout = TimeSpan.FromMinutes(30)
+            Timeout = TimeSpan.FromHours(6)
         };
 
 
@@ -53,48 +43,27 @@ namespace SamFirm.Utils
 
             Directory.CreateDirectory(saveTo);
             string sanitizedFileName = Path.GetFileName(file);
-            string encryptedPath = Path.Combine(saveTo, $"{sanitizedFileName}.enc2");
 
             Logger.Info($"Downloading firmware: {sanitizedFileName}");
             Logger.Info($"File size: {File.FileSize / (1024.0 * 1024.0 * 1024.0):F2} GB");
 
-            if (!await TryDownloadWithAria2c(url, encryptedPath))
+            // Always use streaming mode to minimize disk usage
+            // This downloads, decrypts, and extracts in a single pass without storing the encrypted file
+            Logger.Info("Using streaming mode (download + decrypt + extract in one pass)...");
+            var request = new HttpRequestMessage(HttpMethod.Get, url);
+            request.Headers.Add("User-Agent", "Kies2.0_FUS");
+            request.Headers.Add("Authorization", $"FUS nonce=\"{Nonce}\", signature=\"{Auth.GetAuthorization(NonceDecrypted)}\"");
+
+            using (var response = await _httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead))
             {
-                Logger.Info("Using built-in downloader (streaming mode)...");
-                var request = new HttpRequestMessage(HttpMethod.Get, url);
-                request.Headers.Add("User-Agent", "Kies2.0_FUS");
-                request.Headers.Add("Authorization", $"FUS nonce=\"{Nonce}\", signature=\"{Auth.GetAuthorization(NonceDecrypted)}\"");
-
-
-                using (var response = await _httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead))
+                response.EnsureSuccessStatusCode();
+                using (var stream = await response.Content.ReadAsStreamAsync())
                 {
-                    response.EnsureSuccessStatusCode();
-                    using (var stream = await response.Content.ReadAsStreamAsync())
-                    {
-                        Logger.Info("Decrypting and extracting firmware...");
-                        File.HandleEncryptedFile(stream, saveTo);
-                    }
-                }
-                Logger.Done("Download, decryption, and extraction complete!");
-                return;
-            }
-
-            Logger.Done("Download complete, now decrypting and extracting...");
-            try
-            {
-                using (var stream = System.IO.File.OpenRead(encryptedPath))
-                {
+                    Logger.Info("Decrypting and extracting firmware...");
                     File.HandleEncryptedFile(stream, saveTo);
                 }
-                Logger.Done("Decryption and extraction complete!");
             }
-            finally
-            {
-                if (System.IO.File.Exists(encryptedPath))
-                {
-                    System.IO.File.Delete(encryptedPath);
-                }
-            }
+            Logger.Done("Download, decryption, and extraction complete!");
         }
 
         public static int DownloadBinaryInform(string xml, out string xmlresponse) =>
@@ -121,134 +90,6 @@ namespace SamFirm.Utils
         public static void SetReconnect()
         {
             // TODO: Not implemented.
-        }
-
-        private static async Task<bool> TryDownloadWithAria2c(string url, string outputPath)
-        {
-            string configPath = string.Empty;
-            try
-            {
-                string dir = Path.GetDirectoryName(outputPath) ?? string.Empty;
-                if (string.IsNullOrEmpty(dir))
-                {
-                    dir = Directory.GetCurrentDirectory();
-                }
-
-                string fileName = Path.GetFileName(outputPath);
-
-                var configLines = new[]
-                {
-                    "continue=true",
-                    $"max-connection-per-server={Aria2Connections}",
-                    $"split={Aria2Connections}",
-                    "min-split-size=1M",
-                    "max-download-limit=0",
-                    $"max-tries={Aria2MaxTries}",
-                    $"retry-wait={Aria2RetryWait}",
-                    $"timeout={Aria2TimeoutSeconds}",
-                    $"connect-timeout={Aria2ConnectTimeoutSeconds}",
-                    "allow-overwrite=true",
-                    "auto-file-renaming=false",
-                    "disable-ipv6=true",
-                    "no-conf=true",
-                    "file-allocation=none",
-                    "console-log-level=warn",
-                    $"dir={dir}",
-                    $"out={fileName}",
-                    "header=User-Agent: Kies2.0_FUS",
-                    $"header=Authorization: FUS nonce=\"{Nonce}\", signature=\"{Auth.GetAuthorization(NonceDecrypted)}\""
-                };
-
-                configPath = Path.Combine(dir, $".aria2_{Guid.NewGuid():N}.conf");
-                using (var configStream = new FileStream(configPath, FileMode.Create, FileAccess.Write, FileShare.None))
-                using (var writer = new StreamWriter(configStream, Encoding.UTF8))
-                {
-                    foreach (var line in configLines)
-                    {
-                        writer.WriteLine(line);
-                    }
-                }
-
-
-                var psi = new ProcessStartInfo
-                {
-                    FileName = "aria2c",
-                    RedirectStandardOutput = true,
-                    RedirectStandardError = true,
-                    UseShellExecute = false,
-                    CreateNoWindow = true
-                };
-
-                psi.ArgumentList.Add($"--conf-path={configPath}");
-                psi.ArgumentList.Add(url);
-
-                Process process = null;
-                try
-                {
-                    process = Process.Start(psi);
-                    if (process == null)
-                    {
-                        Logger.Warn("aria2c failed to start. Ensure aria2c is installed and available in PATH.");
-                        return false;
-                    }
-
-                    var waitTask = process.WaitForExitAsync();
-                    var completedTask = await Task.WhenAny(waitTask, Task.Delay(Aria2DownloadTimeout));
-                    if (completedTask != waitTask)
-                    {
-                        Logger.Warn($"aria2c timed out downloading {fileName}, falling back to builtin downloader.");
-                        try
-                        {
-                            process.Kill();
-                        }
-                        catch (InvalidOperationException)
-                        {
-                            // process already exited
-                        }
-                        catch (System.ComponentModel.Win32Exception)
-                        {
-                            // ignore kill errors
-                        }
-                        return false;
-                    }
-
-                    if (process.ExitCode != 0)
-                    {
-                        Logger.Warn($"aria2c download failed with code {process.ExitCode} for {fileName}, falling back to builtin downloader.");
-                        return false;
-                    }
-
-                    var downloadedFile = new FileInfo(outputPath);
-                    return downloadedFile.Exists && downloadedFile.Length > 0;
-                }
-                finally
-                {
-                    process?.Dispose();
-                }
-            }
-            catch (Exception ex)
-            {
-                Logger.Debug($"aria2c unavailable, falling back to builtin downloader: {ex.Message}");
-                return false;
-            }
-            finally
-            {
-                if (!string.IsNullOrEmpty(configPath) && System.IO.File.Exists(configPath))
-                {
-                    try
-                    {
-                        System.IO.File.Delete(configPath);
-                    }
-                    catch (IOException)
-                    {
-                        // ignore cleanup failures
-                    }
-                    catch (UnauthorizedAccessException)
-                    {
-                        // ignore cleanup failures
-                    }
-                }
-            }
         }
 
         private static int XMLFUSRequest(string URL, string xml, out string xmlresponse)
