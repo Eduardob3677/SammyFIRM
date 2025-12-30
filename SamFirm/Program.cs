@@ -6,6 +6,7 @@ using System.Threading.Tasks;
 using System.Xml.Linq;
 using System.Xml.XPath;
 using CommandLine;
+using SamFirm.Utils;
 
 namespace SamFirm
 {
@@ -49,7 +50,7 @@ namespace SamFirm
             if (string.IsNullOrEmpty(model) || string.IsNullOrEmpty(region) || string.IsNullOrEmpty(imei)) return;
 
             Console.OutputEncoding = Encoding.UTF8;
-            Console.WriteLine($"\n  Model: {model}\n  Region: {region}");
+            Logger.Raw($"\n  Model: {model}\n  Region: {region}");
 
             string latestVersionStr = await GetLatestVersion(region, model);
             string[] versions = latestVersionStr.Split('/');
@@ -58,14 +59,14 @@ namespace SamFirm
             string versionMODEM = versions[2];
             string version = $"{versionPDA}/{versionCSC}/{(versionMODEM.Length > 0 ? versionMODEM : versionPDA)}/{versionPDA}";
 
-            Console.WriteLine($"\n  Latest version:\n    PDA: {versionPDA}\n    CSC: {versionCSC}\n    MODEM: {(versionMODEM.Length > 0 ? versionMODEM : "N/A")}");
+            Logger.Raw($"  Latest version:\n    PDA: {versionPDA}\n    CSC: {versionCSC}\n    MODEM: {(versionMODEM.Length > 0 ? versionMODEM : "N/A")}");
 
-            Console.WriteLine("\n  Fetching firmware information...");
-            Utils.FUSClient.GenerateNonce();
+            Logger.Info("Fetching firmware information...");
+            FUSClient.GenerateNonce();
 
             string binaryInfoXMLString;
-            Utils.FUSClient.DownloadBinaryInform(
-                Utils.Msg.GetBinaryInformMsg(version, region, model, imei, Utils.FUSClient.NonceDecrypted), out binaryInfoXMLString);
+            FUSClient.DownloadBinaryInform(
+                Msg.GetBinaryInformMsg(version, region, model, imei, FUSClient.NonceDecrypted), out binaryInfoXMLString);
 
             XDocument binaryInfo = XDocument.Parse(binaryInfoXMLString);
             long binaryByteSize = long.Parse(binaryInfo.XPathSelectElement("./FUSMsg/FUSBody/Put/BINARY_BYTE_SIZE/Data").Value);
@@ -74,19 +75,31 @@ namespace SamFirm
             string binaryModelPath = binaryInfo.XPathSelectElement("./FUSMsg/FUSBody/Put/MODEL_PATH/Data").Value;
             string binaryVersion = binaryInfo.XPathSelectElement("./FUSMsg/FUSBody/Results/LATEST_FW_VERSION/Data").Value;
 
-            Console.WriteLine($"  Firmware file: {binaryFilename}");
-            Console.WriteLine($"  Firmware size: {binaryByteSize / (1024.0 * 1024.0 * 1024.0):F2} GB");
+            Logger.Raw($"  Firmware file: {binaryFilename}");
+            Logger.Raw($"  Firmware size: {binaryByteSize / (1024.0 * 1024.0 * 1024.0):F2} GB");
 
-            Utils.FUSClient.DownloadBinaryInit(Utils.Msg.GetBinaryInitMsg(binaryFilename, Utils.FUSClient.NonceDecrypted), out _);
+            FUSClient.DownloadBinaryInit(Msg.GetBinaryInitMsg(binaryFilename, FUSClient.NonceDecrypted), out _);
 
             Utils.File.FileSize = binaryByteSize;
             Utils.File.SetDecryptKey(binaryVersion, binaryLogicValue);
 
             string savePath = Path.GetFullPath($"./{model}_{region}");
-            Console.WriteLine($"\n  Save path: {savePath}");
+            Logger.Raw($"  Save path: {savePath}");
 
-
-            await Utils.FUSClient.DownloadBinary(binaryModelPath, binaryFilename, savePath);
+            try
+            {
+                await FUSClient.DownloadBinary(binaryModelPath, binaryFilename, savePath);
+            }
+            catch (IOException ex) when (ex.Message.Contains("No space left on device"))
+            {
+                Logger.ErrorExit($"Not enough disk space to download firmware: {ex.Message}", 1);
+                Environment.Exit(1);
+            }
+            catch (Exception ex)
+            {
+                Logger.ErrorExit($"Failed to download firmware: {ex.Message}", 1);
+                Environment.Exit(1);
+            }
         }
     }
 }
