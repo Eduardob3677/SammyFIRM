@@ -57,23 +57,18 @@ namespace SamFirm.Utils
             Logger.Info($"Downloading firmware: {sanitizedFileName}");
             Logger.Info($"File size: {File.FileSize / (1024.0 * 1024.0 * 1024.0):F2} GB");
 
+            // Try streaming mode first (minimizes disk usage - no encrypted file stored)
+            bool streamingSuccess = await TryStreamingDownload(url, saveTo);
+            if (streamingSuccess)
+            {
+                return;
+            }
+
+            // Fallback to aria2c if streaming failed
+            Logger.Warn("Streaming download failed, trying aria2c...");
             if (!await TryDownloadWithAria2c(url, encryptedPath))
             {
-                Logger.Info("Using built-in downloader (streaming mode)...");
-                var request = new HttpRequestMessage(HttpMethod.Get, url);
-                request.Headers.Add("User-Agent", "Kies2.0_FUS");
-                request.Headers.Add("Authorization", $"FUS nonce=\"{Nonce}\", signature=\"{Auth.GetAuthorization(NonceDecrypted)}\"");
-
-                using (var response = await _httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead))
-                {
-                    response.EnsureSuccessStatusCode();
-                    using (var stream = await response.Content.ReadAsStreamAsync())
-                    {
-                        Logger.Info("Decrypting and extracting firmware...");
-                        File.HandleEncryptedFile(stream, saveTo);
-                    }
-                }
-                Logger.Done("Download, decryption, and extraction complete!");
+                Logger.ErrorExit("All download methods failed", 1);
                 return;
             }
 
@@ -94,6 +89,34 @@ namespace SamFirm.Utils
                     System.IO.File.Delete(encryptedPath);
                     Logger.Info("Cleaned up temporary encrypted file.");
                 }
+            }
+        }
+
+        private static async Task<bool> TryStreamingDownload(string url, string saveTo)
+        {
+            try
+            {
+                Logger.Info("Using streaming mode (download + decrypt + extract in one pass)...");
+                var request = new HttpRequestMessage(HttpMethod.Get, url);
+                request.Headers.Add("User-Agent", "Kies2.0_FUS");
+                request.Headers.Add("Authorization", $"FUS nonce=\"{Nonce}\", signature=\"{Auth.GetAuthorization(NonceDecrypted)}\"");
+
+                using (var response = await _httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead))
+                {
+                    response.EnsureSuccessStatusCode();
+                    using (var stream = await response.Content.ReadAsStreamAsync())
+                    {
+                        Logger.Info("Decrypting and extracting firmware...");
+                        File.HandleEncryptedFile(stream, saveTo);
+                    }
+                }
+                Logger.Done("Download, decryption, and extraction complete!");
+                return true;
+            }
+            catch (Exception ex)
+            {
+                Logger.Warn($"Streaming download failed: {ex.Message}");
+                return false;
             }
         }
 
@@ -195,7 +218,7 @@ namespace SamFirm.Utils
                     var completedTask = await Task.WhenAny(waitTask, Task.Delay(Aria2DownloadTimeout));
                     if (completedTask != waitTask)
                     {
-                        Logger.Warn($"aria2c timed out downloading {fileName}, falling back to builtin downloader.");
+                        Logger.Warn($"aria2c timed out downloading {fileName}.");
                         try
                         {
                             process.Kill();
@@ -213,7 +236,7 @@ namespace SamFirm.Utils
 
                     if (process.ExitCode != 0)
                     {
-                        Logger.Warn($"aria2c download failed with code {process.ExitCode} for {fileName}, falling back to builtin downloader.");
+                        Logger.Warn($"aria2c download failed with code {process.ExitCode} for {fileName}.");
                         return false;
                     }
 
@@ -227,7 +250,7 @@ namespace SamFirm.Utils
             }
             catch (Exception ex)
             {
-                Logger.Debug($"aria2c unavailable, falling back to builtin downloader: {ex.Message}");
+                Logger.Debug($"aria2c unavailable: {ex.Message}");
                 return false;
             }
             finally
