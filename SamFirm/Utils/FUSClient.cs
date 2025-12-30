@@ -68,6 +68,8 @@ namespace SamFirm.Utils
             Logger.Warn("Streaming download failed, trying aria2c...");
             if (!await TryDownloadWithAria2c(url, encryptedPath))
             {
+                // Clean up any partial downloads before exiting
+                CleanupTemporaryFiles(encryptedPath, saveTo);
                 Logger.ErrorExit("All download methods failed", 1);
                 return;
             }
@@ -83,12 +85,98 @@ namespace SamFirm.Utils
             }
             finally
             {
-                // Clean up encrypted file immediately after extraction
+                // Clean up all temporary files after extraction
+                CleanupTemporaryFiles(encryptedPath, saveTo);
+            }
+        }
+
+        private static void CleanupTemporaryFiles(string encryptedPath, string saveDir)
+        {
+            Logger.Info("Cleaning up temporary files...");
+            int cleanedCount = 0;
+
+            try
+            {
+                // Clean up the encrypted file (.enc2, .enc4, etc.)
                 if (System.IO.File.Exists(encryptedPath))
                 {
                     System.IO.File.Delete(encryptedPath);
-                    Logger.Info("Cleaned up temporary encrypted file.");
+                    Logger.Info($"  Deleted: {Path.GetFileName(encryptedPath)}");
+                    cleanedCount++;
                 }
+
+                // Clean up aria2c control files (.aria2)
+                string aria2ControlFile = encryptedPath + ".aria2";
+                if (System.IO.File.Exists(aria2ControlFile))
+                {
+                    System.IO.File.Delete(aria2ControlFile);
+                    Logger.Info($"  Deleted: {Path.GetFileName(aria2ControlFile)}");
+                    cleanedCount++;
+                }
+
+                // Clean up any other .enc* files in the directory (in case of previous failed downloads)
+                if (Directory.Exists(saveDir))
+                {
+                    var encFiles = Directory.GetFiles(saveDir, "*.enc*");
+                    foreach (var encFile in encFiles)
+                    {
+                        try
+                        {
+                            System.IO.File.Delete(encFile);
+                            Logger.Info($"  Deleted: {Path.GetFileName(encFile)}");
+                            cleanedCount++;
+                        }
+                        catch (Exception ex)
+                        {
+                            Logger.Debug($"  Could not delete {Path.GetFileName(encFile)}: {ex.Message}");
+                        }
+                    }
+
+                    // Clean up aria2c control files in the directory
+                    var aria2Files = Directory.GetFiles(saveDir, "*.aria2");
+                    foreach (var aria2File in aria2Files)
+                    {
+                        try
+                        {
+                            System.IO.File.Delete(aria2File);
+                            Logger.Info($"  Deleted: {Path.GetFileName(aria2File)}");
+                            cleanedCount++;
+                        }
+                        catch (Exception ex)
+                        {
+                            Logger.Debug($"  Could not delete {Path.GetFileName(aria2File)}: {ex.Message}");
+                        }
+                    }
+
+                    // Clean up aria2c config files in the directory
+                    var aria2ConfigFiles = Directory.GetFiles(saveDir, ".aria2_*.conf");
+                    foreach (var configFile in aria2ConfigFiles)
+                    {
+                        try
+                        {
+                            System.IO.File.Delete(configFile);
+                            Logger.Info($"  Deleted: {Path.GetFileName(configFile)}");
+                            cleanedCount++;
+                        }
+                        catch (Exception ex)
+                        {
+                            Logger.Debug($"  Could not delete {Path.GetFileName(configFile)}: {ex.Message}");
+                        }
+                    }
+                }
+
+                if (cleanedCount > 0)
+                {
+                    Logger.Done($"Cleaned up {cleanedCount} temporary file(s)");
+                }
+                else
+                {
+                    Logger.Info("No temporary files to clean up");
+                }
+            }
+            catch (Exception ex)
+            {
+                Logger.Warn($"Error during cleanup: {ex.Message}");
             }
         }
 

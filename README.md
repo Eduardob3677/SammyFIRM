@@ -23,7 +23,7 @@ To save disk space, you can download only specific firmware components using the
 
 You can combine multiple options. If no component options are specified, all components will be downloaded.
 
-**Note:** TAR archives (`.tar.md5` files) are automatically extracted and deleted to save disk space. This prevents using double the space (TAR file + extracted contents).
+**Note:** TAR archives (`.tar.md5` files) are automatically extracted and deleted to save disk space. This prevents using double the space (TAR file + extracted contents). All temporary files including encrypted firmware files (`.enc4`) and download control files are automatically cleaned up after extraction.
 
 Windows users may choose the smaller but not-self-contained variant if [.NET runtime](https://dotnet.microsoft.com/download/dotnet/5.0/runtime) is present.
 
