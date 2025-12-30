@@ -11,6 +11,18 @@ A streaming downloader, decryptor and extractor of Samsung firmware.
 1. Region, Model and IMEI need to be valid for the target device, otherwise FUS will respond with Err 408
 1. If you dont have the IMEI of a certain device you want, usually googling <model> "imei swappa" will bring up valid ones
 
+#### Optional: Selective Component Download
+
+To save disk space, you can download only specific firmware components using these options:
+
+- `--ap` - Download only AP (Application Processor) file
+- `--bl` - Download only BL (Bootloader) file
+- `--cp` - Download only CP (Modem/Radio) file
+- `--csc` - Download only CSC (Consumer Software Customization) file
+- `--home-csc` - Download only HOME_CSC file
+
+You can combine multiple options. If no component options are specified, all components will be downloaded.
+
 Windows users may choose the smaller but not-self-contained variant if [.NET runtime](https://dotnet.microsoft.com/download/dotnet/5.0/runtime) is present.
 
 ### Build
@@ -21,6 +33,8 @@ Windows users may choose the smaller but not-self-contained variant if [.NET run
 1. Build solution
 
 ## Example
+
+### Download all components (default behavior)
 
 ```
 > ./SamFirm -m SM-F916N -r KOO -i <valid imei>
@@ -47,6 +61,23 @@ Windows users may choose the smaller but not-self-contained variant if [.NET run
 
 /mnt/c/Users/jc/source/repos/SamFirm.NET/SamFirm/dist/linux-x64/SM-F916N_KOO
 BL_F916NTBU1ATJC_CL19952515_QB35429635_REV00_user_low_ship_MULTI_CERT.tar.md5
+```
+
+### Download only specific components (to save disk space)
+
+Download only AP file:
+```
+> ./SamFirm -m SM-S916B -r EUX -i <valid imei> --ap
+```
+
+Download only BL and CSC files:
+```
+> ./SamFirm -m SM-S916B -r EUX -i <valid imei> --bl --csc
+```
+
+Download AP, BL, and CP files:
+```
+> ./SamFirm -m SM-S938B -r EUX -i <valid imei> --ap --bl --cp
 ```
 
 ## License
