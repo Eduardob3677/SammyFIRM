@@ -53,3 +53,22 @@ jobs:
             SamFirm-macos-x64
             SamFirm-win-x64.exe
 
+      # Create GitHub Release with binaries (only on push, not on PRs)
+      - name: Create Release
+        if: github.event_name == 'push'
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: build-${{ github.run_number }}-${{ github.sha }}
+          name: Build ${{ github.run_number }} (${{ github.ref_name }})
+          draft: false
+          prerelease: false
+          files: |
+            SamFirm-linux-x64
+            SamFirm-macos-x64
+            SamFirm-win-x64.exe
+          body: |
+            Automated release from ${{ github.ref_name }} branch
+            Commit: ${{ github.sha }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
